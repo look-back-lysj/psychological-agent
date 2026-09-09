@@ -1,11 +1,23 @@
 {
   "name": "psych-companion",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "大学生情绪陪伴智能体原型",
+  "description": "心屿 · 大学生情绪陪伴智能体",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node tests/run.js"
+    "test": "node tests/run.js",
+    "build": "node build.js"
+  },
+  "pkg": {
+    "assets": [
+      "public/**/*",
+      "src/**/*.js",
+      "node_modules/**/*"
+    ],
+    "outputPath": "dist",
+    "targets": [
+      "node18-win-x64"
+    ]
   },
   "license": "UNLICENSED",
   "dependencies": {
