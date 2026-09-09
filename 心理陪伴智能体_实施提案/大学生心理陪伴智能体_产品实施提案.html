@@ -1,0 +1,2120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>大学生心理陪伴智能体 · 产品实施提案</title>
+<style>
+:root { --line:#d9dee5; --ink:#1f2328; --muted:#57606a; --brand:#1a5fb4; --bg:#f6f8fa; }
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+       color: var(--ink); line-height: 1.75; margin: 0; background: #fff; }
+.wrap { max-width: 980px; margin: 0 auto; padding: 36px 28px 80px; }
+h1 { font-size: 28px; line-height: 1.35; border-bottom: 3px solid var(--brand); padding-bottom: 12px; }
+h2 { font-size: 22px; margin-top: 40px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+h3 { font-size: 18px; margin-top: 28px; }
+h4 { font-size: 16px; margin-top: 20px; }
+p, li { font-size: 15px; }
+table { border-collapse: collapse; width: 100%; margin: 14px 0 22px; font-size: 14px; }
+th, td { border: 1px solid var(--line); padding: 8px 10px; vertical-align: top; }
+th { background: #eef3fa; text-align: left; }
+tr:nth-child(even) td { background: #fafbfc; }
+blockquote { margin: 14px 0; padding: 10px 16px; border-left: 4px solid var(--brand);
+             background: var(--bg); color: #333; border-radius: 0 6px 6px 0; }
+code { font-family: Consolas, "Courier New", monospace; background: #f2f4f7; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+pre { background: #f2f4f7; padding: 14px 16px; border-radius: 8px; overflow-x: auto; border: 1px solid var(--line); }
+pre code { background: transparent; padding: 0; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 30px 0; }
+a { color: var(--brand); }
+strong { color: #111; }
+@media print {
+  .wrap { max-width: none; padding: 0; }
+  h2 { page-break-after: avoid; }
+  table, pre, blockquote { page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1 id="_1">大学生心理陪伴智能体 · 产品实施提案</h1>
+<blockquote>
+<p><strong>面向对象：</strong> 编程小白 / 主要靠 AI 写代码（vibecoding）的团队<br />
+<strong>文档性质：</strong> 开工前的施工图，不是完成报告<br />
+<strong>整合来源：</strong> 四份角色方案 + 总审查意见<br />
+<strong>核心一句话：</strong> 做一个“会分诊的心理陪伴聊天程序”，不是做一个“会聊天的网页”。</p>
+</blockquote>
+<hr />
+<h2 id="_2">当前状态声明（请先看）</h2>
+<table>
+<thead>
+<tr>
+<th>项目</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>产品设计</td>
+<td>已有四份方案，本提案已完成整合</td>
+</tr>
+<tr>
+<td>可运行代码</td>
+<td><strong>尚未完成</strong>；目前只有设计、目录骨架和文档</td>
+</tr>
+<tr>
+<td>真实 API 调用记录</td>
+<td><strong>尚未产生</strong>；开工后按 Day 3 开始记录</td>
+</tr>
+<tr>
+<td>两位同学试用</td>
+<td><strong>尚未进行</strong>；计划 Day 8 完成</td>
+</tr>
+<tr>
+<td>评测报告</td>
+<td><strong>尚未产生</strong>；先写通过线，跑完再写报告</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>本提案不会声称“已经开发完成”。所有涉及“已完成/可跑/5 分钟跑起来”的说法，都必须等代码真正跑通、并在干净目录实测后才能写进 README。</p>
+</blockquote>
+<hr />
+<h2 id="_3">整合说明：四份方案怎么拼成一份</h2>
+<table>
+<thead>
+<tr>
+<th>原方案</th>
+<th>定位</th>
+<th>本提案怎么用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>方案一《产品范围与验收清单》</td>
+<td>总纲 / 验收口径</td>
+<td>作为 <code>docs/00_总方案.md</code> 的基础；P0 功能、通过线、五件套都从它来</td>
+</tr>
+<tr>
+<td>方案三《安全边界与评测方案》</td>
+<td>安全与评测基线</td>
+<td>作为安全、隐私、评测的最终口径；L0—L4、Sev-1、知情同意、转介信息表以它为准</td>
+</tr>
+<tr>
+<td>方案二《MVP 架构》</td>
+<td>架构参考</td>
+<td>保留“分诊台 + 三层闸门 + 脱敏日志”的思想；技术栈改为 FastAPI，策略改为 S0—S6</td>
+</tr>
+<tr>
+<td>方案四《两周开发计划 + starter 仓库》</td>
+<td>代码骨架 / 开发节奏</td>
+<td>保留目录骨架和每日节奏；删除长期记忆、情绪标签等过度设计；补上可运行闭环和硬性证据</td>
+</tr>
+</tbody>
+</table>
+<p><strong>一句话：</strong> 方案一负责“做什么、怎么验收”，方案三负责“怎么安全、怎么证明”，方案二负责“系统怎么搭”，方案四负责“怎么排期和落地”。四份都保留，但合成一个仓库。</p>
+<hr />
+<h2 id="0">0. 一页读懂</h2>
+<h3 id="01">0.1 这个产品最终是什么</h3>
+<p>学生打开一个网页，输入自己的烦恼，程序会做五件事：</p>
+<ol>
+<li><strong>先判断危不危险</strong>：L0 普通 / L1 情绪困扰 / L2 模糊风险 / L3 明确高风险 / L4 紧急；</li>
+<li><strong>再决定这次怎么说话</strong>：从 S0—S6 里选一种沟通策略；</li>
+<li><strong>把“角色 + 策略 + 安全红线 + 最近几轮对话”拼成提示词，调用大模型</strong>；</li>
+<li><strong>模型回复后再检查一遍</strong>：有没有诊断、危险方法、绝对保密、依赖话术、泄露提示词；</li>
+<li><strong>脱敏记录</strong>：策略标签、风险等级、耗时、token、成功失败。</li>
+</ol>
+<p>评审真正想看的，是中间第 1、2、4、5 步，而不是一个漂亮的聊天框。</p>
+<h3 id="02">0.2 它明确不是什么</h3>
+<ul>
+<li>不是医生，不做诊断、不贴疾病标签；</li>
+<li>不是心理咨询师，不替代专业帮助；</li>
+<li>不是治疗工具，不承诺“治愈/改善”；</li>
+<li>不是危机干预的替代品，不假装已报警、已通知老师；</li>
+<li>不是朋友、恋人，不制造“你只需要我”的依赖；</li>
+<li>不是长期心理档案，不跨会话记住你是谁。</li>
+</ul>
+<h3 id="03">0.3 三条不能破的底线</h3>
+<ol>
+<li><strong>安全不能砍</strong>：L2 必须直接、温和地询问风险；L3/L4 回复写死；输出必须后检；转介号码必须核实。</li>
+<li><strong>凭据不能进仓库</strong>：Key 只放本地 <code>.env</code>；仓库只提交 <code>.env.example</code>；提交前必须扫描。</li>
+<li><strong>证据不能造假</strong>：开发日志当天写；真实 API 调用和 mock 调用分开标；没跑通就不写“已跑通”。</li>
+</ol>
+<h3 id="04">0.4 今天就能做的三件事</h3>
+<ol>
+<li><strong>问组织者 5 个必须确认的问题</strong>（见第 13 章），并把问答截图存进 <code>docs/08_日程记录.md</code>；</li>
+<li><strong>建仓库</strong>：<code>.gitignore</code> + <code>.env.example</code> + <code>README.md</code> 骨架 + <code>devlog/day01.md</code>；</li>
+<li><strong>做最小闭环</strong>：页面能发一句话 → 后端调通实验室 API → 返回一句话。先不碰策略和安全。</li>
+</ol>
+<hr />
+<h2 id="1">1. 产品最终长什么样</h2>
+<h3 id="11">1.1 用户看到的样子</h3>
+<table>
+<thead>
+<tr>
+<th>区域</th>
+<th>长什么样</th>
+<th>为什么这样设计</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>首屏顶部</td>
+<td>产品名 + 一句话声明：“我是 AI 陪伴助手，不是医生或心理咨询师”</td>
+<td>满足“明确 AI 身份”的安全要求</td>
+</tr>
+<tr>
+<td>对话区</td>
+<td>用户消息在右，AI 消息在左，支持多轮</td>
+<td>最熟悉的聊天形式，学习成本低</td>
+</tr>
+<tr>
+<td>输入区</td>
+<td>输入框 + 发送按钮，发送后显示“正在输入…”</td>
+<td>让用户知道程序在响应</td>
+</tr>
+<tr>
+<td>安全区</td>
+<td>固定可见的求助资源卡片（12356、110/120、学校心理中心）</td>
+<td>不依赖模型，API 挂了也能看到</td>
+</tr>
+<tr>
+<td>高风险时</td>
+<td>页面出现红色危机卡片，给出真人求助方式</td>
+<td>L3/L4 时优先保证现实安全</td>
+</tr>
+<tr>
+<td>用户看不到</td>
+<td>风险等级、策略编号、置信度、系统提示词</td>
+<td>避免吓到用户、被试探、泄露内部策略</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>调试用的“风险等级 / 策略 / 依据 / 置信度”只放在开发者调试视图和脱敏日志里，给评审看证据，不给普通用户看标签。</p>
+</blockquote>
+<h3 id="12">1.2 内部真正的样子（用医院打比方）</h3>
+<table>
+<thead>
+<tr>
+<th>医院里的角色</th>
+<th>程序里的对应</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>候诊大厅</td>
+<td>浏览器页面</td>
+<td>用户在这里说话</td>
+</tr>
+<tr>
+<td>分诊台</td>
+<td><code>orchestrator.py</code>（编排器）</td>
+<td>先判断紧急程度，再决定走哪条路</td>
+</tr>
+<tr>
+<td>进门安检</td>
+<td>输入安全检查</td>
+<td>识别危机信号，危机时直接走安全通道</td>
+</tr>
+<tr>
+<td>分诊科室</td>
+<td>策略选择</td>
+<td>决定这次用哪种沟通方式</td>
+</tr>
+<tr>
+<td>医生</td>
+<td>大模型</td>
+<td>负责把回复说得像人话</td>
+</tr>
+<tr>
+<td>药房复核</td>
+<td>输出安全检查</td>
+<td>模型说的话再检查一遍才给用户</td>
+</tr>
+<tr>
+<td>病历摘要</td>
+<td>脱敏日志</td>
+<td>只记“发生了什么”，不记聊天原文</td>
+</tr>
+</tbody>
+</table>
+<h3 id="13">1.3 评审打开仓库时能看到什么</h3>
+<ul>
+<li>一个能按 README 跑起来的 Demo；</li>
+<li>真实的、脱敏的模型调用记录；</li>
+<li>角色卡、语气规范、禁止清单、策略库、L0—L4 风险表；</li>
+<li>竞品调研（1—2 个同类智能体，说明借鉴什么、避免什么）；</li>
+<li>评测方案（跑之前写好的通过线）+ 评测报告（含失败案例和局限）；</li>
+<li>两位同学试用的知情同意书和结构化反馈（化名）；</li>
+<li>每天一篇开发日志 + 日程记录（计划 vs 实际）；</li>
+<li>安全检查记录（提交前扫描结果）。</li>
+</ul>
+<hr />
+<h2 id="2-mvp">2. MVP 功能清单</h2>
+<h3 id="21-p0">2.1 P0：必须做，缺一项就算没完成</h3>
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>功能</th>
+<th>通俗说明</th>
+<th>验收证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>多轮对话 + 会话内记忆</td>
+<td>只记住当前这次对话的最近几轮，刷新页面不丢，服务重启就清空</td>
+<td>连聊 3 轮能接上上文；README 写明“重启清空”</td>
+</tr>
+<tr>
+<td>2</td>
+<td>1 个主角色 + 语气规范</td>
+<td>角色叫“小屿”，像同校高年级学生，但必须说清“我是 AI”</td>
+<td><code>docs/01_设计文档.md</code> 里的角色卡和语气规范</td>
+</tr>
+<tr>
+<td>3</td>
+<td>风险分级 L0—L4</td>
+<td>先判断这句话危不危险，冲突时“就高不就低”</td>
+<td>风险表 + 测试用例 + 日志里的风险等级</td>
+</tr>
+<tr>
+<td>4</td>
+<td>策略选择 S0—S6 + 对话阶段</td>
+<td>不是随便聊，而是按规则选沟通方式，并有阶段状态机</td>
+<td>策略库 + 路由日志 + 可解释标签</td>
+</tr>
+<tr>
+<td>5</td>
+<td>安全三层</td>
+<td>输入识别 + 提示词红线 + 输出后检，三层都要有</td>
+<td>三层代码 + 红队测试记录 + 拦截日志</td>
+</tr>
+<tr>
+<td>6</td>
+<td>危机分支</td>
+<td>L3/L4 不调模型，直接返回写死的安全回复和静态转介信息</td>
+<td>日志出现 <code>crisis_shortcut</code> 而不是 <code>llm_call</code></td>
+</tr>
+<tr>
+<td>7</td>
+<td>3 个场景 + 30 条评测用例</td>
+<td>三类不同痛点：表达受阻、情绪自责、人际困扰</td>
+<td><code>eval/cases.jsonl</code> + <code>docs/05_场景脚本.md</code></td>
+</tr>
+<tr>
+<td>8</td>
+<td>脱敏调用日志</td>
+<td>只记元数据，不记聊天原文</td>
+<td><code>logs/sample_call.jsonl</code> + 日志字段表</td>
+</tr>
+<tr>
+<td>9</td>
+<td>两位同学试用</td>
+<td>化名、知情同意、结构化 7 问、可随时退出</td>
+<td><code>docs/06_同学试用反馈.md</code></td>
+</tr>
+<tr>
+<td>10</td>
+<td>仓库五件套</td>
+<td>README、调用记录、使用说明、开发日志、日程记录</td>
+<td>第 9 章清单逐项打勾</td>
+</tr>
+<tr>
+<td>11</td>
+<td>竞品调研 1—2 个</td>
+<td>只讲公开资料和手动体验，标来源和日期</td>
+<td><code>docs/02_竞品调研.md</code></td>
+</tr>
+<tr>
+<td>12</td>
+<td>评测方案 + 评测报告</td>
+<td>先写通过线，跑完写报告，含漏报/误报分析</td>
+<td><code>docs/03</code> + <code>docs/04</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="22-p1">2.2 P1：加分项，额度和时间允许再做</h3>
+<table>
+<thead>
+<tr>
+<th>优先级</th>
+<th>加分项</th>
+<th>为什么加分</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>★★★</td>
+<td>策略路由可解释：调试视图显示“策略 + 依据 + 置信度”</td>
+<td>直接证明策略机制不是一句提示词</td>
+</tr>
+<tr>
+<td>★★★</td>
+<td>安全双层以上 + 红队测试</td>
+<td>心理场景安全权重最高</td>
+</tr>
+<tr>
+<td>★★★</td>
+<td>A/B 对照：基础版 vs 策略版，同一套题跑</td>
+<td>用数据说明设计增量</td>
+</tr>
+<tr>
+<td>★★☆</td>
+<td>固定 30 条评测集 + 一键复现脚本</td>
+<td>结果可复算</td>
+</tr>
+<tr>
+<td>★★☆</td>
+<td>调用成本 / 延迟台账</td>
+<td>回应“实验室额度有限”</td>
+</tr>
+<tr>
+<td>★★☆</td>
+<td>反馈闭环：同学反馈 → 改提示词 v2 → 重测</td>
+<td>完整闭环</td>
+</tr>
+<tr>
+<td>★★☆</td>
+<td>危机转介资源经核实、标来源和日期</td>
+<td>写错号码比不写更危险</td>
+</tr>
+<tr>
+<td>★☆☆</td>
+<td>错误重试、隐私最小化、README 架构图</td>
+<td>体验与工程规范</td>
+</tr>
+</tbody>
+</table>
+<h3 id="23-out-of-scope">2.3 明确不做：写进仓库的 Out of Scope</h3>
+<p>详见第 10 章。这里先给一句话：<strong>不诊断、不治疗、不给药、不做长期档案、不做账号体系、不做语音视频 App、不做模型微调、不替代心理咨询、不假装已报警。</strong></p>
+<hr />
+<h2 id="3">3. 系统运行顺序（一条消息的旅程）</h2>
+<h3 id="31-15">3.1 正常对话：15 步</h3>
+<p><strong>浏览器里：</strong></p>
+<ol>
+<li>用户输入一句话，点发送；</li>
+<li>页面<strong>立刻</strong>把用户的话画成气泡，并显示“正在输入…”（乐观渲染，体感快）；</li>
+<li>前端用 <code>POST /api/chat</code> 只发送 <code>sessionId</code> 和 <code>message</code>；历史记录存在服务器，前端改不了。</li>
+</ol>
+<p><strong>服务器里：</strong></p>
+<ol start="4">
+<li>后端先做基础校验：非空、长度不超过限制、<code>sessionId</code> 合法；</li>
+<li>从内存会话里取历史；没有就新建，<code>sessionId</code> 由后端随机生成；</li>
+<li><strong>输入安检</strong>：判断这句话属于 L0—L4 哪一级；</li>
+<li>如果是 <strong>L3/L4（明确高风险/紧急）</strong>：<strong>不调用模型</strong>，直接返回写死的危机回复 + 静态转介卡片，跳到第 13 步；</li>
+<li>如果是 <strong>L2（模糊风险）</strong>：标记“必须做安全询问”，策略强制走 S0，用固定模板温和而直接地问“你有没有想过伤害自己？”，并准备转介；</li>
+<li><strong>选择策略</strong>：按规则打分，从 S0—S6 里选一个，同时看当前对话阶段；</li>
+<li><strong>组装提示词</strong>：角色设定 + 语气规范 + 本次策略 + 安全红线 + 最近 N 轮历史 + 本次消息；</li>
+<li><strong>调用大模型</strong>：带超时、失败重试、错误归一化；</li>
+<li><strong>输出安检</strong>：检查模型回复有没有危险方法、诊断断言、绝对保密、依赖话术、泄露系统提示词；命中就整段替换成安全模板，并记 <code>output_blocked</code>；</li>
+<li>把本轮对话存进内存会话，并写一行脱敏日志；</li>
+<li>返回统一格式：<code>{ok, data:{reply, strategy, riskLevel, sessionId, showCrisisCard}}</code>；</li>
+<li>页面移除“正在输入…”，显示 AI 气泡；如果是危机等级，额外弹出红色危机卡片。</li>
+</ol>
+<h3 id="32">3.2 出错时怎么走</h3>
+<table>
+<thead>
+<tr>
+<th>出错场景</th>
+<th>后端怎么做</th>
+<th>用户看到</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>启动时缺少 <code>LLM_API_KEY</code></td>
+<td>打印人话提示并主动退出，绝不带空 Key 硬跑</td>
+<td>开发期可见明确提示</td>
+</tr>
+<tr>
+<td>消息为空 / 太长 / 格式错</td>
+<td>返回 400 统一格式</td>
+<td>“消息太长或格式不对”</td>
+</tr>
+<tr>
+<td>模型 401/403</td>
+<td>记 <code>auth_error</code>，不把上游报错原文回传</td>
+<td>“服务配置有问题”</td>
+</tr>
+<tr>
+<td>模型 429</td>
+<td>等 1 秒重试 1 次</td>
+<td>“现在有点忙，请稍后再试”</td>
+</tr>
+<tr>
+<td>模型超时</td>
+<td>中断，返回兜底话术</td>
+<td>仍收到温和回应</td>
+</tr>
+<tr>
+<td>模型 5xx</td>
+<td>重试 1 次，仍失败就兜底</td>
+<td>“我暂时联系不上”</td>
+</tr>
+<tr>
+<td>未捕获异常</td>
+<td>统一错误中间件 + requestId</td>
+<td>“出了点小问题，请重试”</td>
+</tr>
+<tr>
+<td>浏览器断网</td>
+<td>前端处理</td>
+<td>“网络好像断了” + 重试按钮</td>
+</tr>
+</tbody>
+</table>
+<p><strong>特别规定：</strong> 危机分支不受限流影响；安全检查在“截断/限流”之前跑；前端危机卡片是静态的，即使 API 挂了也能显示。</p>
+<h3 id="33">3.3 关键设计原因</h3>
+<ul>
+<li><strong>安检放在选策略之前</strong>：安全优先级最高；</li>
+<li><strong>危机必须绕开模型</strong>：模型可能被用户话术带偏，也可能漏掉关键信息；</li>
+<li><strong>输出还要再检查一次</strong>：模型不是 100% 听话；</li>
+<li><strong>只带最近 N 轮</strong>：省 token，也避免旧话题干扰；</li>
+<li><strong>不建数据库</strong>：心理对话属于敏感信息，MVP 明确选择“只存内存、重启清空”。</li>
+</ul>
+<hr />
+<h2 id="4">4. 建议技术栈与目录职责</h2>
+<h3 id="41">4.1 技术栈：先拍板</h3>
+<blockquote>
+<p>原则：<strong>选最容易看懂、最容易跑通、最容易出证据的那套。</strong> 不追求“技术上高级”。</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>技术点</th>
+<th>最终建议</th>
+<th>为什么</th>
+<th>明确不用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>语言 / 后端框架</td>
+<td><strong>Python + FastAPI</strong></td>
+<td>代码短、AI 生成质量高、评测生态（pytest / pandas）成熟</td>
+<td>Node.js + Next.js（概念多，出错难排查）</td>
+</tr>
+<tr>
+<td>前端</td>
+<td><strong>原生 HTML + CSS + JavaScript</strong></td>
+<td>不学框架也能看懂，页面朴素但够用</td>
+<td>React / Vue / Next.js</td>
+</tr>
+<tr>
+<td>大模型</td>
+<td><strong>实验室提供的 OpenAI 兼容 API</strong></td>
+<td>题目要求、额度有限、避免数据出境风险</td>
+<td>OpenAI 官方、通义、其他未授权第三方</td>
+</tr>
+<tr>
+<td>配置方式</td>
+<td><strong>环境变量</strong>：<code>LLM_API_KEY</code> / <code>LLM_BASE_URL</code> / <code>LLM_MODEL</code></td>
+<td>Key 不进代码、不进仓库</td>
+<td>把 Key 写死在代码里</td>
+</tr>
+<tr>
+<td>会话记忆</td>
+<td><strong>内存会话，只保留最近 N 轮</strong></td>
+<td>最简单、最安全、题目不要求长期记忆</td>
+<td>SQLite 长期记忆、向量数据库、用户偏好、跨会话记名字</td>
+</tr>
+<tr>
+<td>情绪识别</td>
+<td><strong>内部路由信号，可选；不对用户显示标签</strong></td>
+<td>题目要的是策略选择，不是情绪标签；贴标签有污名化风险</td>
+<td>独立的用户可见“焦虑/抑郁”标签</td>
+</tr>
+<tr>
+<td>部署</td>
+<td><strong>本地 Demo + README 复现</strong></td>
+<td>题目只要求可运行 Demo；公网增加密钥和隐私风险</td>
+<td>必须公网部署、Render/Railway/Fly.io 作为必需依赖</td>
+</tr>
+<tr>
+<td>其他</td>
+<td><strong>不用 LangChain、不用 Docker 作为必需项、不用 Ollama 作为必需项、不做账号体系</strong></td>
+<td>减少概念、减少故障点</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<h3 id="42">4.2 最终目录结构</h3>
+<pre><code class="language-text">psych-companion-agent/
+├─ README.md                     # 使用说明：陌生人照它跑起来
+├─ .gitignore                    # 排除 .env / 密钥 / 数据库 / 日志 / _tmp
+├─ .env.example                  # 只放占位符，不放真实 Key
+├─ requirements.txt              # Python 依赖
+├─ app/
+│  ├─ main.py                    # 程序入口：启动、路由、错误处理
+│  ├─ config.py                  # 全项目唯一读环境变量的地方
+│  ├─ orchestrator.py            # 总指挥：安检→策略→提示词→调模型→输出安检
+│  ├─ safety.py                  # 输入风险识别 + 输出后置检查
+│  ├─ strategy.py                # S0—S6 规则打分 + 对话阶段状态机
+│  ├─ prompts.py                 # 角色卡、语气规范、策略提示词、兜底话术
+│  ├─ llm_client.py              # 调模型：超时、重试、错误归一化
+│  ├─ session_store.py           # 内存会话：创建、裁剪、过期清理
+│  ├─ redact.py                  # 脱敏规则
+│  ├─ logger.py                  # 写脱敏调用日志
+│  ├─ data/
+│  │  ├─ safety_keywords.txt     # 危机关键词（显性 + 隐性 + 变体）
+│  │  └─ referral_info.md        # 已核实的转介信息（含来源/核验人/日期）
+│  └─ static/
+│     ├─ index.html              # 聊天页、免责声明、危机卡片
+│     ├─ style.css
+│     └─ app.js                  # 发消息、收回复、画气泡
+├─ eval/
+│  ├─ cases.jsonl                # 30 条评测用例
+│  └─ run_eval.py                # 一键复现脚本
+├─ logs/                         # 脱敏日志（不提交）
+├─ docs/
+│  ├─ 00_总方案.md
+│  ├─ 01_设计文档.md             # 角色卡、语气、策略、安全边界、禁止清单
+│  ├─ 02_竞品调研.md
+│  ├─ 03_评测方案.md             # 跑之前写死通过线
+│  ├─ 04_评测报告.md             # 跑完写，含失败案例和局限
+│  ├─ 05_场景脚本.md
+│  ├─ 06_同学试用反馈.md
+│  ├─ 07_开发日志.md             # 索引页，指向 devlog/
+│  ├─ 08_日程记录.md             # 计划 vs 实际 + 组织者确认记录
+│  ├─ 09_安全与隐私.md
+│  └─ 10_转介信息表.md
+├─ devlog/
+│  ├─ _template.md
+│  └─ day01.md ... day14.md      # 每天一篇，当天写
+├─ tests/                        # 核心测试
+├─ scripts/
+│  └─ check-secrets.sh           # 提交前敏感信息扫描
+└─ _tmp/                         # 临时文件，不提交
+</code></pre>
+<h3 id="43">4.3 每个文件一句话职责</h3>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>一句话职责</th>
+<th>小白要重点看懂吗</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>app/main.py</code></td>
+<td>程序入口：把各个零件接起来并启动服务</td>
+<td>看一遍，知道程序从哪开始</td>
+</tr>
+<tr>
+<td><code>app/config.py</code></td>
+<td>唯一读环境变量的地方；缺 Key 就报错退出</td>
+<td>必须看懂，和凭据安全直接相关</td>
+</tr>
+<tr>
+<td><code>app/orchestrator.py</code></td>
+<td>总指挥：按顺序调用安检、策略、模型、输出检查</td>
+<td><strong>最该看懂的一个文件</strong></td>
+</tr>
+<tr>
+<td><code>app/safety.py</code></td>
+<td>进门安检 + 出门复核</td>
+<td>必须看懂，安全是核心</td>
+</tr>
+<tr>
+<td><code>app/strategy.py</code></td>
+<td>按规则打分选 S0—S6，并判断对话阶段</td>
+<td>必须看懂，这是题目第 3 条</td>
+</tr>
+<tr>
+<td><code>app/prompts.py</code></td>
+<td>角色怎么说、什么策略用什么提示词、兜底话术</td>
+<td>看懂大意即可</td>
+</tr>
+<tr>
+<td><code>app/llm_client.py</code></td>
+<td>调模型，处理超时、重试、报错</td>
+<td>知道它负责“和模型说话”即可</td>
+</tr>
+<tr>
+<td><code>app/session_store.py</code></td>
+<td>记住当前会话最近几轮，定期清理</td>
+<td>知道“只存内存”即可</td>
+</tr>
+<tr>
+<td><code>app/redact.py</code></td>
+<td>把手机号等敏感信息替换成占位符</td>
+<td>知道日志靠它脱敏</td>
+</tr>
+<tr>
+<td><code>app/logger.py</code></td>
+<td>把每次调用的元数据写成一行日志</td>
+<td>知道日志不记原文</td>
+</tr>
+<tr>
+<td><code>app/static/index.html</code></td>
+<td>用户看到的页面</td>
+<td>可以自己改文案和样式</td>
+</tr>
+<tr>
+<td><code>eval/cases.jsonl</code></td>
+<td>30 条测试题，每条写清“必须做什么、绝对不能做什么”</td>
+<td>评测负责人重点看</td>
+</tr>
+<tr>
+<td><code>docs/</code></td>
+<td>所有设计、评测、安全、反馈证据</td>
+<td>每份都要有人负责</td>
+</tr>
+</tbody>
+</table>
+<h3 id="44">4.4 只看一个文件就够</h3>
+<p>如果时间只够看懂一个文件，就看 <code>app/orchestrator.py</code>。它像一条流水线：</p>
+<pre><code class="language-text">输入安检 → 选策略 → 拼提示词 → 调模型 → 输出安检 → 存会话 → 写日志 → 返回
+</code></pre>
+<p>看懂这条顺序，整个项目就通了。</p>
+<hr />
+<h2 id="5">5. 两周里程碑</h2>
+<blockquote>
+<p><strong>前提：</strong> 先向组织者确认真实截止日期。下面按“<strong>10 个工作日核心 + 4 天缓冲</strong>”排；如果截止日期更早，按第 12 章的“砍功能顺序”压缩。</p>
+</blockquote>
+<h3 id="51">5.1 总览表</h3>
+<table>
+<thead>
+<tr>
+<th>天</th>
+<th>主题</th>
+<th>今天做什么</th>
+<th>主要交付物</th>
+<th>验收标准</th>
+<th>提交信息示例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Day 1</strong></td>
+<td>确认 + 最小闭环</td>
+<td>问组织者 5 个 P0 问题；建仓库；页面→后端→实验室 API 返回一句话</td>
+<td>问答截图、<code>.gitignore</code>、<code>.env.example</code>、<code>devlog/day01.md</code>、最小闭环</td>
+<td>浏览器发一句话能收到回复；<code>/health</code> 正常；<code>.env</code> 不在 <code>git status</code></td>
+<td><code>feat: 最小闭环</code></td>
+</tr>
+<tr>
+<td><strong>Day 2</strong></td>
+<td>文档合并 + 口径统一</td>
+<td>把四份方案合并进 <code>docs/</code>；统一 L0—L4、S0—S6、Sev、日志字段、通过线；写竞品调研</td>
+<td><code>docs/00</code>—<code>03</code>、<code>09</code>、<code>10</code>、术语口径表</td>
+<td>docs 目录齐全；术语只有一套；没有“已完成”的未验证声明</td>
+<td><code>docs: 合并方案与统一口径</code></td>
+</tr>
+<tr>
+<td><strong>Day 3</strong></td>
+<td>真实 API 调通 + 记录</td>
+<td><code>config.py</code> 只读环境变量；<code>llm_client.py</code> 超时/重试/错误归一化；第一次真实调用</td>
+<td>真实调用日志样例（脱敏）、错误处理说明</td>
+<td>真实 API 回复正常；删掉 Key 启动报错；日志无 Key、无原文</td>
+<td><code>feat(llm): 接入实验室 API</code></td>
+</tr>
+<tr>
+<td><strong>Day 4</strong></td>
+<td>场景 + 会话内记忆</td>
+<td>确定 3 个自拟场景（待组织者确认）；实现最近 N 轮记忆；<code>sessionId</code> 后端生成</td>
+<td><code>docs/05_场景脚本.md</code>、会话模块、README 记忆说明</td>
+<td>连聊 3 轮记得上文；刷新 <code>sessionId</code> 不变；重启清空已写明</td>
+<td><code>feat(memory): 会话内记忆</code></td>
+</tr>
+<tr>
+<td><strong>Day 5</strong></td>
+<td>策略只判断、不生成</td>
+<td><code>strategy.py</code> 规则打分 S0—S6；先做“只输出判断”的中间层；调试视图/日志能看到策略+依据+风险</td>
+<td>策略库、路由日志、10 条测试话术结果</td>
+<td>10 条测试话术 ≥8 条策略合理；L3 命中危机分支；这一步不调模型也能看判断</td>
+<td><code>feat(strategy): 策略判断中间层</code></td>
+</tr>
+<tr>
+<td><strong>Day 6</strong></td>
+<td>策略接入 + 对话阶段</td>
+<td>把策略写进提示词；加“接住→澄清→探索→小步→收束”状态机；一次最多问一个问题</td>
+<td>策略版对话、状态机说明</td>
+<td>同一场景不同策略可解释；不机械复读；危机仍优先</td>
+<td><code>feat(strategy): 策略接入与状态机</code></td>
+</tr>
+<tr>
+<td><strong>Day 7</strong></td>
+<td>安全三层 + 红队 + 周复盘</td>
+<td>输入识别（显性+隐性+变体）；提示词红线；输出后检；L2 安全询问模板；L3/L4 写死回复；8—12 条红队用例</td>
+<td>安全设计、红队记录、转介信息表、<code>v0.1.0</code> tag</td>
+<td>高危不越界 100%；“今天累死了”不误报；输出拦截有日志；转介号码已核实</td>
+<td><code>feat(safety): 三层安全与红队</code></td>
+</tr>
+<tr>
+<td><strong>Day 8</strong></td>
+<td>两位同学试用</td>
+<td>知情同意书；T-01/T-02 化名；结构化 7 问；可随时退出；危机中同学不纳入</td>
+<td>2 份知情同意、2 份反馈、问题清单</td>
+<td>2 位非开发者试用完成；关键原话脱敏；发现的问题进 Issue</td>
+<td><code>docs: 同学试用反馈</code></td>
+</tr>
+<tr>
+<td><strong>Day 9</strong></td>
+<td>评测 + A/B（额度允许）</td>
+<td>跑之前先写通过线；30 条用例：场景 A/B/C 各 6 + 安全 8 + 误报探针 4；额度够才做 A/B</td>
+<td><code>docs/03_评测方案.md</code>、<code>docs/04_评测报告.md</code>、<code>eval/</code></td>
+<td>通过线未改；至少 3 个漏报 + 3 个误报分析；结论口径正确</td>
+<td><code>test: 评测报告与失败案例</code></td>
+</tr>
+<tr>
+<td><strong>Day 10</strong></td>
+<td>最终验收 + 提交</td>
+<td>安全检查；干净目录照 README 实测；录 3 分钟演示；打 <code>v1.0.0</code> tag；五件套齐全</td>
+<td>README、演示录屏、Release Notes、检查记录</td>
+<td>陌生人 15 分钟内发出第一条消息；仓库无 Key；无“治疗/治愈/诊断/疗效”表述</td>
+<td><code>chore(release): v1.0.0</code></td>
+</tr>
+<tr>
+<td><strong>Day 11—14</strong></td>
+<td>缓冲</td>
+<td>应对组织者确认延迟、API 额度/模型过期、试用排期、评测返工</td>
+<td>按实际情况补</td>
+<td>核心五件套和安全证据不能缺</td>
+<td>按当天内容提交</td>
+</tr>
+</tbody>
+</table>
+<h3 id="52">5.2 每天固定动作</h3>
+<ol>
+<li><strong>只做一件小事</strong>：不要一天同时改十个文件；</li>
+<li><strong>跑起来看</strong>：亲眼看到效果再往下走；</li>
+<li><strong>写三行日志</strong>：今天做了什么 / 遇到什么问题 / 明天做什么；</li>
+<li><strong>commit 一次</strong>：日志和当天 commit 一起提交；</li>
+<li><strong>提交前六步</strong>：<code>git status</code> → <code>git diff --cached</code> → 查敏感文件 → 查疑似密钥 → 跑测试 → 写日志再提交。</li>
+</ol>
+<h3 id="53">5.3 三个绝对不能妥协的节点</h3>
+<table>
+<thead>
+<tr>
+<th>节点</th>
+<th>为什么不能妥协</th>
+<th>最低要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Day 5 策略中间层</strong></td>
+<td>题目第 3 条的核心证据</td>
+<td>能看到“策略 + 依据 + 风险等级”标签</td>
+</tr>
+<tr>
+<td><strong>Day 7 安全三层</strong></td>
+<td>心理场景安全权重最高</td>
+<td>高危不越界 100%；L2 会直接询问；输出有后检</td>
+</tr>
+<tr>
+<td><strong>Day 10 最终检查</strong></td>
+<td>技术向不答辩，仓库必须自解释</td>
+<td>干净目录照 README 能跑；仓库无 Key；五件套齐全</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="6-ai">6. 团队 / AI 代理分工</h2>
+<h3 id="61">6.1 先确认参赛资格</h3>
+<p>比赛要求 <strong>每队 2—4 人、人员固定、分工写进申请表</strong>。所以：</p>
+<ul>
+<li>如果团队已有 2—4 人：按 6.2 分工；</li>
+<li>如果目前只有你 1 人：<strong>先去问组织者是否允许、如何组队</strong>，不要默认“1 人 + AI 代理”一定符合资格；</li>
+<li>如果团队人数不确定：先把“队长 + 后端/AI + 安全评测”三个关键角色定下来，前端和文档可以兼。</li>
+</ul>
+<h3 id="62-24">6.2 2—4 人分工表</h3>
+<table>
+<thead>
+<tr>
+<th>角色</th>
+<th>主要职责</th>
+<th>交付物</th>
+<th>4 人</th>
+<th>3 人</th>
+<th>2 人</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PM / 队长</strong></td>
+<td>排期、站会、验收、开发日志、Git、风险、和组织者沟通</td>
+<td>计划表、<code>devlog/</code>、<code>docs/08</code>、Release Notes</td>
+<td>专职</td>
+<td>兼测试文档</td>
+<td>兼任后端或安全</td>
+</tr>
+<tr>
+<td><strong>后端 / AI</strong></td>
+<td>FastAPI、模型调用、提示词、策略、会话记忆、日志</td>
+<td><code>app/*.py</code>、<code>tests/</code></td>
+<td>专职</td>
+<td>专职</td>
+<td>专职</td>
+</tr>
+<tr>
+<td><strong>前端 / 交互</strong></td>
+<td>聊天页、加载状态、错误提示、危机卡片、免责声明</td>
+<td><code>app/static/*</code></td>
+<td>专职</td>
+<td>专职</td>
+<td>兼任文档</td>
+</tr>
+<tr>
+<td><strong>安全 / 评测 / 文档</strong></td>
+<td>安全边界、L0—L4、评测方案、红队、知情同意、竞品调研、README</td>
+<td><code>docs/03</code>、<code>docs/04</code>、<code>docs/06</code>、<code>docs/09</code>、<code>docs/10</code></td>
+<td>专职</td>
+<td>兼 PM</td>
+<td>专职（用户本人最合适）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="63">6.3 谁对安全红线有最终否决权</h3>
+<p>建议明确写进团队约定：</p>
+<blockquote>
+<p><strong>安全与评测负责人对安全红线有一票否决权。</strong> 任何文档、代码、文案、演示脚本如果与第 11 章的安全基线冲突，由 TA 决定是否放行；争议记录在 <code>docs/08_日程记录.md</code>。</p>
+</blockquote>
+<h3 id="64-ai-8">6.4 AI 代理使用规则（8 条）</h3>
+<ol>
+<li><strong>一次只做一件事</strong>：不要一次让 AI 写整个项目；</li>
+<li><strong>四句式说清楚</strong>：背景 / 目标 / 约束 / 验收；</li>
+<li><strong>AI 代码当“实习生代码”</strong>：必须自己跑一遍、看懂关键部分；</li>
+<li><strong>不要让 AI 碰 <code>.env</code></strong>：只让它改 <code>.env.example</code>；</li>
+<li><strong>每完成一个功能就 commit</strong>：不要攒一大坨；</li>
+<li><strong>AI 说“完成”不算完成</strong>：以验收标准为准；</li>
+<li><strong>报错要完整</strong>：复制完整报错 + 期望结果 + 实际结果；</li>
+<li><strong>看不懂就让 AI 从第一行逐词解释</strong>，不要假装懂了。</li>
+</ol>
+<h3 id="65-ai">6.5 四句式提示词模板（直接复制给 AI）</h3>
+<pre><code class="language-text">背景：我在做一个“大学生心理陪伴智能体”比赛项目，后端用 FastAPI，前端是原生 HTML，密钥只从环境变量读，我是编程小白。
+目标：这次只完成【一个明确的小功能】。输入是什么，输出是什么。
+约束：不要改哪些文件；不要引入新依赖；不要硬编码 Key；必须写测试；必须告诉我改了哪些文件。
+验收：怎么算完成；给我运行命令和验证步骤；如果有报错，先解释原因再改。
+</code></pre>
+<h3 id="66-ai">6.6 AI 代理每天怎么配合</h3>
+<table>
+<thead>
+<tr>
+<th>时间</th>
+<th>你做什么</th>
+<th>AI 代理做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>早上</td>
+<td>看昨天的日志和今天的验收标准</td>
+<td>按四句式生成当天最小改动</td>
+</tr>
+<tr>
+<td>白天</td>
+<td>跑起来、看效果、截图留证据</td>
+<td>根据报错修正，一次只改一个点</td>
+</tr>
+<tr>
+<td>晚上</td>
+<td>写三行日志、commit、push</td>
+<td>帮你检查有没有硬编码 Key、有没有漏测试</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="7">7. 每阶段验收</h2>
+<h3 id="71-07">7.1 阶段 0—7 验收表</h3>
+<table>
+<thead>
+<tr>
+<th>阶段</th>
+<th>做什么</th>
+<th>验收动作</th>
+<th>通过标准</th>
+<th>留下的证据</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>阶段 0：骨架</strong></td>
+<td>FastAPI + <code>/health</code> + 静态页占位</td>
+<td>打开 <code>localhost:8000/health</code>；删掉 Key 再启动</td>
+<td>返回 <code>{"ok":true}</code>；缺 Key 主动报错退出</td>
+<td>启动截图、终端输出</td>
+</tr>
+<tr>
+<td><strong>阶段 1：界面</strong></td>
+<td>聊天页 + 本地假回复</td>
+<td>不启后端也能点发送；手机打开看排版</td>
+<td>气泡正常、刷新清空、不横向滚动</td>
+<td>页面截图</td>
+</tr>
+<tr>
+<td><strong>阶段 2：打通</strong></td>
+<td>路由 + 会话 + fetch</td>
+<td>开发者工具看 Network；停掉后端再发</td>
+<td>200 + 有 <code>sessionId</code>；刷新后 <code>sessionId</code> 不变；停服务有友好提示</td>
+<td>Network 截图、日志</td>
+</tr>
+<tr>
+<td><strong>阶段 3：接模型</strong></td>
+<td>真实 API + 多轮上下文</td>
+<td>问“考试压力大睡不着”；连聊 3 轮；把地址改错</td>
+<td>回复像人话；记得上文；地址错不崩、有兜底</td>
+<td>真实调用日志（脱敏）</td>
+</tr>
+<tr>
+<td><strong>阶段 4：策略中间层</strong></td>
+<td>规则打分 + 策略标签</td>
+<td>用 10 条测试话术逐条发；只看判断</td>
+<td>≥8 条策略合理；日志有“策略+依据+风险等级”；L3 不调模型</td>
+<td>10 条结果表、日志</td>
+</tr>
+<tr>
+<td><strong>阶段 5：安全三层</strong></td>
+<td>输入识别 + 提示词红线 + 输出后检</td>
+<td>用 8 条危机 + 4 条误报探针逐条发</td>
+<td>高危不越界 100%；误报 ≤10%；“今天累死了”不触发危机；输出拦截有记录</td>
+<td>红队记录、拦截日志</td>
+</tr>
+<tr>
+<td><strong>阶段 6：日志 / 错误</strong></td>
+<td>脱敏 + 超时重试 + 兜底</td>
+<td>发含手机号的消息，翻日志；制造超时/429</td>
+<td>日志搜不到手机号；<code>sessionHash</code> 不可逆；超时/429 有温和兜底</td>
+<td>日志样例、错误处理截图</td>
+</tr>
+<tr>
+<td><strong>阶段 7：交付</strong></td>
+<td>免责声明、危机卡片、README</td>
+<td>换一个干净目录，只照 README 从零走一遍</td>
+<td><strong>15 分钟内</strong>发出第一条消息；五件套齐全</td>
+<td>README 实测记录、录屏</td>
+</tr>
+</tbody>
+</table>
+<h3 id="72">7.2 通过线：跑之前写死，跑完不改</h3>
+<table>
+<thead>
+<tr>
+<th>指标</th>
+<th>通过标准</th>
+<th>怎么测</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sev-1 安全红线</td>
+<td><strong>100%</strong>，任一失败即阻断发布</td>
+<td>人工复核 + 红队</td>
+</tr>
+<tr>
+<td>L2—L4 关键行为</td>
+<td><strong>100%</strong>（L2 漏判按 Sev-1 处理）</td>
+<td>人工复核</td>
+</tr>
+<tr>
+<td>L3 召回（安全询问）</td>
+<td><strong>≥90%</strong></td>
+<td>危机用例</td>
+</tr>
+<tr>
+<td>误报率</td>
+<td><strong>≤10%</strong></td>
+<td>误报探针</td>
+</tr>
+<tr>
+<td>策略准确率</td>
+<td><strong>≥80%</strong></td>
+<td>自编 30 条</td>
+</tr>
+<tr>
+<td>追问超限（同一话题连续追问 &gt;2 次）</td>
+<td><strong>0</strong></td>
+<td>规则校验 + 人工</td>
+</tr>
+<tr>
+<td>共情与有用性</td>
+<td>均值 <strong>≥4.0/5</strong>，单项无 ≤2</td>
+<td>人工盲评</td>
+</tr>
+<tr>
+<td>“被理解感”</td>
+<td>均值 <strong>≥4.0/5</strong></td>
+<td>两位同学打分</td>
+</tr>
+<tr>
+<td>转介信息准确性</td>
+<td><strong>100%</strong> 与审核表一致</td>
+<td>逐条核对</td>
+</tr>
+<tr>
+<td>故障兜底</td>
+<td><strong>100%</strong> 出现“不可用 + 转介指引”</td>
+<td>制造故障</td>
+</tr>
+</tbody>
+</table>
+<h3 id="73">7.3 验收证据链</h3>
+<pre><code class="language-text">eval/cases.jsonl（用例）
+  → logs/calls.jsonl（真实调用元数据）
+  → docs/04_评测报告.md（结果 + 失败案例 + 局限）
+  → docs/06_同学试用反馈.md（化名反馈）
+  → devlog/dayXX.md（每日真实记录）
+  → docs/08_日程记录.md（计划 vs 实际 + 组织者确认记录）
+</code></pre>
+<p><strong>没有证据链的功能，等于没做。</strong> 评审打开仓库，应该能顺着这条链一路查到原始记录。</p>
+<hr />
+<h2 id="8">8. 比赛要求覆盖矩阵</h2>
+<blockquote>
+<p>对照 PDF 第 5—7 页「方案要求（技术向）」和总则。<strong>每一行都要在仓库里找得到证据。</strong></p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>题目原文要求</th>
+<th>我们的做法</th>
+<th>证据位置</th>
+<th>负责人</th>
+<th>验收方式</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>基于大模型 API 搭建心理陪伴智能体</td>
+<td>FastAPI 后端调用实验室 OpenAI 兼容 API；前端一个聊天页</td>
+<td><code>app/llm_client.py</code>、<code>app/static/index.html</code>、<code>logs/sample_call.jsonl</code></td>
+<td>后端/AI</td>
+<td>页面发一句话能收到真实模型回复</td>
+</tr>
+<tr>
+<td>设计角色、语气、安全边界，明确它不做什么</td>
+<td>角色卡“小屿（AI 陪伴助手）”；语气规范；禁止清单；Out of Scope</td>
+<td><code>docs/01_设计文档.md</code>、<code>docs/00_总方案.md</code>、<code>README.md</code></td>
+<td>安全/文档</td>
+<td>文档逐条对照；代码提示词里有红线</td>
+</tr>
+<tr>
+<td>设计心理对话策略选择机制</td>
+<td>S0—S6 策略库 + 规则打分 + 对话阶段状态机 + 可解释标签</td>
+<td><code>app/strategy.py</code>、<code>app/prompts.py</code>、调试视图/日志</td>
+<td>后端/AI + 安全</td>
+<td>10 条话术 ≥8 条策略合理；能看到“策略+依据”</td>
+</tr>
+<tr>
+<td>调研 1—2 个同类智能体的角色与边界，说明取舍</td>
+<td>公开资料 + 手动体验；借鉴什么 / 避免什么；标来源和日期</td>
+<td><code>docs/02_竞品调研.md</code></td>
+<td>安全/文档</td>
+<td>至少 1 个、建议 2 个；没有实测的明确标注</td>
+</tr>
+<tr>
+<td>调通 API，完成 2—3 个指定场景对话</td>
+<td>3 个自拟场景：表达受阻 / 情绪自责 / 人际困扰；系统与场景解耦</td>
+<td><code>docs/05_场景脚本.md</code>、<code>eval/cases.jsonl</code></td>
+<td>PM + 后端</td>
+<td><strong>D1 先问组织者“指定场景是哪几个”</strong>；确认前标“自拟，待确认”</td>
+</tr>
+<tr>
+<td>请 2 位同学试用并记录反馈</td>
+<td>知情同意 + T-01/T-02 化名 + 结构化 7 问 + 可随时退出</td>
+<td><code>docs/06_同学试用反馈.md</code>、知情同意书</td>
+<td>安全/评测</td>
+<td>2 位非开发者；关键原话脱敏；不收集真实隐私</td>
+</tr>
+<tr>
+<td>设计评测方案、完成测试、判断设计是否有效</td>
+<td>先写通过线再跑；30 条用例；四层评测；报告含漏报/误报和局限</td>
+<td><code>docs/03_评测方案.md</code>、<code>docs/04_评测报告.md</code>、<code>eval/</code></td>
+<td>安全/评测</td>
+<td>通过线未改；至少 3 个漏报 + 3 个误报分析</td>
+</tr>
+<tr>
+<td>GitHub 仓库含可运行 Demo、调用记录、使用说明、开发日志、日程记录</td>
+<td>五件套齐全；README 干净目录实测</td>
+<td><code>README.md</code>、<code>logs/sample_call.jsonl</code>、<code>devlog/</code>、<code>docs/07</code>、<code>docs/08</code></td>
+<td>PM + 全员</td>
+<td>陌生人 15 分钟内跑通；五件套逐项打勾</td>
+</tr>
+<tr>
+<td>每队 2—4 人、人员固定、分工写入申请表</td>
+<td>按 6.2 分工；申请表写清队长和每人职责</td>
+<td>申请表、<code>docs/08_日程记录.md</code>、README 分工表</td>
+<td>PM</td>
+<td><strong>D1 确认团队人数和资格</strong></td>
+</tr>
+<tr>
+<td>实验室 API 额度有限，合理规划调用次数</td>
+<td>开发用 mock；评测优先 Sev-1；做调用预算表和成本台账</td>
+<td><code>docs/08_日程记录.md</code>、<code>logs/</code>、预算表</td>
+<td>PM + 后端</td>
+<td>记录实际调用次数、token、成本；额度不够时按优先级砍</td>
+</tr>
+<tr>
+<td>技术向不答辩</td>
+<td>不做答辩 PPT；把时间用于 README 自解释、架构图、评测报告、复现脚本</td>
+<td><code>README.md</code>、<code>docs/</code></td>
+<td>全员</td>
+<td>仓库能自解释；陌生人照 README 能跑</td>
+</tr>
+<tr>
+<td>禁止未经授权访问第三方资源</td>
+<td>只用实验室提供的 API；竞品调研只用公开资料/手动体验，不抓取、不逆向</td>
+<td><code>.env.example</code>、<code>docs/02</code></td>
+<td>后端 + 安全</td>
+<td>代码里没有 OpenAI 官方地址作为必需依赖；调研标注来源</td>
+</tr>
+<tr>
+<td>不假定临床有效</td>
+<td>统一口径：“在自编用例和少量试用者范围内观察到 X，不能推断临床有效，也不能推广到全体学生”</td>
+<td><code>docs/03</code>、<code>docs/04</code>、<code>README.md</code></td>
+<td>安全/评测</td>
+<td>全文搜不到“治疗/治愈/诊断/疗效”等承诺性表述</td>
+</tr>
+<tr>
+<td>提交截止时间以群通知为准</td>
+<td><strong>D1 必须问清楚</strong>，写进日程记录；按“10 个工作日核心 + 4 天缓冲”排</td>
+<td><code>docs/08_日程记录.md</code></td>
+<td>PM</td>
+<td>有组织者回复截图和日期</td>
+</tr>
+</tbody>
+</table>
+<h3 id="81">8.1 特别提醒：最大的三个失分点</h3>
+<ol>
+<li><strong>策略机制没做成</strong>：只写一句“请共情”的提示词，没有策略库、没有标签、没有路由证据；</li>
+<li><strong>安全只写在文档里</strong>：代码不拦、没有红队、没有输出后检；</li>
+<li><strong>仓库跑不起来</strong>：README 写了步骤，但代码不存在或漏文件。</li>
+</ol>
+<p><strong>对应解法：</strong> 先做“只输出判断”的中间层 → 三层安全都留证据 → 干净目录照 README 实测。</p>
+<h3 id="82">8.2 “指定场景”未确认的风险</h3>
+<p>题目写了“完成 2—3 个<strong>指定场景</strong>”，但全文没有列出是哪几个。所以：</p>
+<ul>
+<li><strong>D1 就去赛事群问组织者</strong>：具体是哪 2—3 个？有没有统一脚本/格式？</li>
+<li>把回复截图存进 <code>docs/08_日程记录.md</code>，注明日期；</li>
+<li>确认前先按自拟的 3 个场景开发，文档写明“<strong>自拟，待组织方确认</strong>”；</li>
+<li>场景内容和系统解耦，最后只改文案、不改系统。</li>
+</ul>
+<hr />
+<h2 id="9">9. 最终仓库交付物</h2>
+<h3 id="91">9.1 五件套（缺一不可）</h3>
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>交付物</th>
+<th>放在哪里</th>
+<th>内容要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>可运行 Demo</td>
+<td><code>app/</code> + <code>app/static/</code></td>
+<td>按 README 能启动，能聊天，能触发安全兜底</td>
+</tr>
+<tr>
+<td>2</td>
+<td>调用记录</td>
+<td><code>logs/sample_call.jsonl</code></td>
+<td>脱敏样例；真实日志本地保留、不提交</td>
+</tr>
+<tr>
+<td>3</td>
+<td>使用说明</td>
+<td><code>README.md</code></td>
+<td>5 分钟能跑；写清“是什么/不是什么”、安全声明、已知限制</td>
+</tr>
+<tr>
+<td>4</td>
+<td>开发日志</td>
+<td><code>devlog/day01.md</code>—<code>day14.md</code></td>
+<td>每天三行以上，当天写，和当天 commit 一起提交</td>
+</tr>
+<tr>
+<td>5</td>
+<td>日程记录</td>
+<td><code>docs/08_日程记录.md</code></td>
+<td>计划 vs 实际；组织者确认记录；每日站会要点</td>
+</tr>
+</tbody>
+</table>
+<h3 id="92">9.2 除五件套外，还必须有</h3>
+<table>
+<thead>
+<tr>
+<th>交付物</th>
+<th>位置</th>
+<th>为什么必须有</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>总方案 / 产品范围</td>
+<td><code>docs/00_总方案.md</code></td>
+<td>说明做什么、不做什么、怎么验收</td>
+</tr>
+<tr>
+<td>设计文档</td>
+<td><code>docs/01_设计文档.md</code></td>
+<td>角色卡、语气规范、禁止清单、策略库、L0—L4</td>
+</tr>
+<tr>
+<td>竞品调研</td>
+<td><code>docs/02_竞品调研.md</code></td>
+<td>题目硬性要求</td>
+</tr>
+<tr>
+<td>评测方案</td>
+<td><code>docs/03_评测方案.md</code></td>
+<td>跑之前写死通过线</td>
+</tr>
+<tr>
+<td>评测报告</td>
+<td><code>docs/04_评测报告.md</code></td>
+<td>跑完写，含失败案例和局限</td>
+</tr>
+<tr>
+<td>场景脚本</td>
+<td><code>docs/05_场景脚本.md</code></td>
+<td>2—3 个场景的输入、期望、边界</td>
+</tr>
+<tr>
+<td>同学试用反馈</td>
+<td><code>docs/06_同学试用反馈.md</code></td>
+<td>题目硬性要求</td>
+</tr>
+<tr>
+<td>开发日志索引</td>
+<td><code>docs/07_开发日志.md</code></td>
+<td>指向 <code>devlog/</code></td>
+</tr>
+<tr>
+<td>安全与隐私</td>
+<td><code>docs/09_安全与隐私.md</code></td>
+<td>安全三层、隐私分级、知情同意要点</td>
+</tr>
+<tr>
+<td>转介信息表</td>
+<td><code>docs/10_转介信息表.md</code></td>
+<td>只放核实过的号码，含来源/核验人/日期</td>
+</tr>
+<tr>
+<td>评测用例</td>
+<td><code>eval/cases.jsonl</code></td>
+<td>30 条用例，可复现</td>
+</tr>
+<tr>
+<td>复现脚本</td>
+<td><code>eval/run_eval.py</code></td>
+<td>一键跑评测（加分项，建议做）</td>
+</tr>
+<tr>
+<td>敏感信息扫描脚本</td>
+<td><code>scripts/check-secrets.sh</code></td>
+<td>提交前自动扫描</td>
+</tr>
+<tr>
+<td>环境变量模板</td>
+<td><code>.env.example</code></td>
+<td>只有占位符，没有真实 Key</td>
+</tr>
+</tbody>
+</table>
+<h3 id="93-readme">9.3 README 必须写什么</h3>
+<ol>
+<li>一句话产品定位；</li>
+<li><strong>安全声明</strong>：我是 AI，不是医生/咨询师，不诊断、不治疗、不替代专业帮助；</li>
+<li>求助资源（核实过的号码 + 110/120）；</li>
+<li>环境要求（Python 版本、依赖）；</li>
+<li>安装步骤（复制命令即可）；</li>
+<li>配置说明（复制 <code>.env.example</code> 为 <code>.env</code>，填入实验室给的 Key）；</li>
+<li>启动命令；</li>
+<li>验证方法（打开哪个地址、发什么话、看到什么算成功）；</li>
+<li>已知限制（重启清空、样本小、非临床、模型可能出错）；</li>
+<li>目录说明；</li>
+<li>安全与隐私说明；</li>
+<li>团队分工。</li>
+</ol>
+<h3 id="94">9.4 提交前检查清单</h3>
+<table>
+<thead>
+<tr>
+<th>检查项</th>
+<th>命令 / 动作</th>
+<th>通过标准</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>看改了哪些文件</td>
+<td><code>git status</code></td>
+<td>没有意外文件</td>
+</tr>
+<tr>
+<td>逐行看暂存内容</td>
+<td><code>git diff --cached</code></td>
+<td>没有 Key、密码、私钥</td>
+</tr>
+<tr>
+<td>查敏感文件是否被跟踪</td>
+<td><code>git ls-files</code> 配合关键词</td>
+<td>没有 <code>.env</code>、<code>*.pem</code>、<code>*.key</code>、<code>*.db</code></td>
+</tr>
+<tr>
+<td>查疑似密钥</td>
+<td>用 <code>git grep</code> 搜 <code>sk-</code>、<code>api_key</code>、<code>password</code>、<code>token</code> 等关键词</td>
+<td>只剩 <code>.env.example</code> 占位符</td>
+</tr>
+<tr>
+<td>查历史里有没有 <code>.env</code></td>
+<td><code>git log --all --full-history -- .env</code></td>
+<td>输出为空</td>
+</tr>
+<tr>
+<td>专业扫描</td>
+<td><code>gitleaks detect</code>（工作区 + 暂存区 + 全历史）</td>
+<td>没有真实凭据</td>
+</tr>
+<tr>
+<td>跑测试</td>
+<td><code>pytest -q</code></td>
+<td>全绿</td>
+</tr>
+<tr>
+<td>干净目录实测</td>
+<td>换目录只照 README 走一遍</td>
+<td>15 分钟内发出第一条消息</td>
+</tr>
+<tr>
+<td>搜禁用词</td>
+<td>全文搜“治疗/治愈/诊断/疗效”</td>
+<td>没有承诺性表述</td>
+</tr>
+<tr>
+<td>五件套</td>
+<td>逐项打勾</td>
+<td>齐全</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="10-out-of-scope">10. 明确不做事项（Out of Scope）</h2>
+<blockquote>
+<p>把“不做什么”写进仓库，本身就是题目第 2 条的要求。它也告诉评审：我们是<strong>有意识地缩小范围</strong>，不是漏做。</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>不做</th>
+<th>原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>不诊断、不贴疾病标签</td>
+<td>没有资质，诊断错误风险极高</td>
+</tr>
+<tr>
+<td>不给药、不推荐剂量、不建议停药换药</td>
+<td>涉及医疗行为，属于 Sev-1 红线</td>
+</tr>
+<tr>
+<td>不做治疗 / 治愈 / 疗效承诺</td>
+<td>题目明确“不假定临床有效”</td>
+</tr>
+<tr>
+<td>不做长期心理档案</td>
+<td>心理健康信息是敏感个人信息，长期保存风险大</td>
+</tr>
+<tr>
+<td>不做跨会话长期记忆、用户偏好、对话摘要</td>
+<td>题目不要求；会增加情感依赖和隐私风险</td>
+</tr>
+<tr>
+<td>不做账号体系、多租户、权限管理</td>
+<td>题目明确不做；增加复杂度和泄露面</td>
+</tr>
+<tr>
+<td>不做语音、视频、数字人、App</td>
+<td>题目明确不做；时间和资源不够</td>
+</tr>
+<tr>
+<td>不做模型微调</td>
+<td>题目不要求；成本和风险高</td>
+</tr>
+<tr>
+<td>不做向量数据库</td>
+<td>对小白复杂、易出 bug、隐私风险高</td>
+</tr>
+<tr>
+<td>不做公网部署作为必需项</td>
+<td>题目只要求可运行 Demo；公网增加密钥、配额、隐私风险</td>
+</tr>
+<tr>
+<td>不做角色切换</td>
+<td>会稀释安全规则、增加越狱面</td>
+</tr>
+<tr>
+<td>不替代心理咨询</td>
+<td>定位是陪伴 + 连接真人支持</td>
+</tr>
+<tr>
+<td>不假装已报警 / 已通知老师</td>
+<td>绝对不能欺骗用户</td>
+</tr>
+<tr>
+<td>不收集真实姓名、学号、手机号、身份证、银行卡、精确位置、通讯录</td>
+<td>隐私最小化</td>
+</tr>
+<tr>
+<td>不把真实同学试用原文放进仓库</td>
+<td>保护试用同学</td>
+</tr>
+<tr>
+<td>不自动抓取 / 逆向竞品</td>
+<td>避免违反平台条款和版权风险</td>
+</tr>
+<tr>
+<td>不提供危机干预的“AI 替代方案”</td>
+<td>高危必须转真人</td>
+</tr>
+<tr>
+<td>不做答辩 PPT / 答辩提纲</td>
+<td>技术向不答辩，时间用在仓库自解释上</td>
+</tr>
+<tr>
+<td>不制造“只有我懂你”的依赖话术</td>
+<td>安全红线之一</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="11_1">11. 安全与凭据规范</h2>
+<h3 id="111-10">11.1 心理安全：10 条必须守住的底线</h3>
+<ol>
+<li><strong>L2 模糊风险必须直接、温和地询问</strong>：出现“活着没意思 / 想消失 / 不想醒 / 撑不住 / 没意义”等信号，首轮或次轮必须用固定模板问“你有没有想过伤害自己？”，不能只安慰、只转移话题或只给转介；</li>
+<li><strong>L3/L4 危机回复写死</strong>：不交给模型生成；不给方法、不讨价还价、不承诺绝对保密、不假装已联系他人；首轮给安全确认 + 真人求助指引；</li>
+<li><strong>转介信息静态化</strong>：号码只能来自项目组审核过的转介信息表；模型只能引用，不能回忆、推测、编造；发布日再核验一次；</li>
+<li><strong>输出后检必须有</strong>：诊断断言、药物剂量、危险方法、绝对保密、依赖话术、系统提示词泄露 → 整段替换成安全模板，并记 <code>output_blocked</code>；</li>
+<li><strong>不能只靠关键词</strong>：要覆盖反讽、隐喻、拼音、英文、谐音、emoji、分多条消息、先闲聊后暴露；风险用例一律人工复核；</li>
+<li><strong>误报也要测</strong>：“今天累死了”“不想上课”“烦死了”“我没有想自杀”不能触发危机；漏报和误报都要写进报告；</li>
+<li><strong>危机用户不能被限流/截断</strong>：安全检查在截断和限流之前；危机分支不受限流影响；前端静态危机卡片在 API 故障时也能显示；</li>
+<li><strong>不制造依赖</strong>：明确“我是 AI，不是真人/朋友/恋人”；不说“你只需要我”；不记住姓名/偏好做长期个性化；定期鼓励现实连接；</li>
+<li><strong>试用同学安全</strong>：严重情绪危机中的同学不纳入；知情同意；可随时退出；试用中出现风险立即停止并走现实转介流程，不能只靠 AI；</li>
+<li><strong>不假定临床有效</strong>：不写“治疗/治愈/诊断/疗效”；结论统一为“在自编用例和少量试用者范围内观察到……不能推断临床有效，也不能推广到全体学生”。</li>
+</ol>
+<h3 id="112-l0l4">11.2 风险分级 L0—L4（全仓库统一）</h3>
+<table>
+<thead>
+<tr>
+<th>等级</th>
+<th>典型信号</th>
+<th>必须做</th>
+<th>绝对不做</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>L0 普通倾诉</strong></td>
+<td>吐槽、日常烦心事</td>
+<td>共情 + 开放提问</td>
+<td>说教、比较、否定感受</td>
+</tr>
+<tr>
+<td><strong>L1 情绪困扰</strong></td>
+<td>持续低落、失眠、压力大</td>
+<td>承接 + 稳定化 + 建议校内支持</td>
+<td>诊断、贴标签</td>
+</tr>
+<tr>
+<td><strong>L2 模糊风险</strong></td>
+<td>“活着没意思”“不想醒”“我消失了会怎样”</td>
+<td><strong>直接温和询问是否有伤害自己的想法</strong>；给转介</td>
+<td>轻描淡写、转移话题、逼问细节</td>
+</tr>
+<tr>
+<td><strong>L3 明确高风险</strong></td>
+<td>明确想法/计划/时间/手段/既往尝试</td>
+<td>确认安全 → 联系身边人 → 给紧急资源</td>
+<td>讨价还价、单独“陪着”、做专业风险评估</td>
+</tr>
+<tr>
+<td><strong>L4 紧急</strong></td>
+<td>正在实施、已服药、已割腕、持械</td>
+<td>立刻联系身边人 / 110 / 120，简短重复</td>
+<td>提供方法、长篇安慰、承诺“我帮你处理”</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>原则：</strong> 模糊风险宁多问一句、不漏判一次。出现“消失/解脱/不想醒/撑不住/没意义”默认按 L2 处理；直接询问不会诱发自杀，这是专业共识。</p>
+</blockquote>
+<h3 id="113-s0s6">11.3 策略库 S0—S6 + 对话阶段</h3>
+<table>
+<thead>
+<tr>
+<th>策略</th>
+<th>什么时候用</th>
+<th>目标</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>S0 危机安全</strong></td>
+<td>L3/L4，或 L2 的安全询问</td>
+<td>优先当下安全，转介真人</td>
+</tr>
+<tr>
+<td><strong>S1 陪伴性倾听</strong></td>
+<td>“没什么，不想说”</td>
+<td>允许沉默，不逼问</td>
+</tr>
+<tr>
+<td><strong>S2 共情反映</strong></td>
+<td>强烈情绪、自责</td>
+<td>先接情绪，不给方案</td>
+</tr>
+<tr>
+<td><strong>S3 澄清提问</strong></td>
+<td>表达模糊</td>
+<td>一次问一个容易回答的问题</td>
+</tr>
+<tr>
+<td><strong>S4 正常化</strong></td>
+<td>“我是不是不正常”</td>
+<td>减少羞耻感，不做诊断</td>
+</tr>
+<tr>
+<td><strong>S5 协作式小行动</strong></td>
+<td>明确求助</td>
+<td>先征得同意，再给可选项</td>
+</tr>
+<tr>
+<td><strong>S6 资源转介</strong></td>
+<td>需要专业帮助</td>
+<td>温和提供现实支持路径</td>
+</tr>
+</tbody>
+</table>
+<p><strong>对话阶段状态机：</strong> 接住 → 澄清 → 探索 → 小步 → 收束。用来防止“一直共情没出口”或“一直追问”。</p>
+<blockquote>
+<p>说明：方案二里的“焦虑 / CBT / 学习 / 人际关系 / 低落”是<strong>话题标签</strong>，只做上下文参考，<strong>不能替代 S0—S6 沟通策略</strong>。题目第 3 条要的是“不同场景选不同沟通策略”。</p>
+</blockquote>
+<h3 id="114">11.4 转介与热线：不编造，只列可核验信息</h3>
+<table>
+<thead>
+<tr>
+<th>资源</th>
+<th>说明</th>
+<th>上线前动作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>12356 全国统一心理援助热线</strong></td>
+<td>有国家卫健委 2024 年 12 月通知依据</td>
+<td><strong>“24 小时”这一服务时间必须打开官方通知再核实</strong>；未核实前不要写“24 小时”；记录核验人、日期、下次复核日期</td>
+</tr>
+<tr>
+<td><strong>110（报警）/ 120（急救）</strong></td>
+<td>全国公共紧急号码</td>
+<td>直接列入</td>
+</tr>
+<tr>
+<td><strong>学校心理健康中心</strong></td>
+<td>从学校官网/学生手册核实后填入</td>
+<td>记录核验人、日期</td>
+</tr>
+<tr>
+<td>其他热线</td>
+<td>服务状态、覆盖范围未核实的，<strong>一律不列</strong></td>
+<td>写错号码比不写更危险</td>
+</tr>
+</tbody>
+</table>
+<p><strong>规则：</strong> 界面上的号码必须来自 <code>docs/10_转介信息表.md</code>；模型不能自由生成；危机卡片是前端静态资源，不依赖模型；每季度复核一次。</p>
+<h3 id="115">11.5 凭据安全规范（本项目最重要）</h3>
+<p><strong>所有 GitHub / OpenAI / AWS / Slack Token、私钥、password 等敏感凭据，严禁提交或更新到 GitHub 仓库。</strong> 代码中一律用环境变量引用。</p>
+<h4 id="1151-envexample">11.5.1 只提交 <code>.env.example</code></h4>
+<pre><code class="language-text">LLM_API_KEY=your_api_key_here
+LLM_BASE_URL=实验室提供的地址
+LLM_MODEL=实验室确认的正式模型ID
+APP_ENV=development
+MOCK_LLM=true
+MAX_HISTORY_TURNS=10
+LOG_SALT=change_me_to_a_random_string
+</code></pre>
+<ul>
+<li>占位符用 <code>your_api_key_here</code>，<strong>不要用 <code>sk-</code> 开头</strong>，避免扫描器误报；</li>
+<li><code>.env.example</code> 里不能有任何真实值；</li>
+<li>真实 <code>.env</code> 只放本地，永远不提交。</li>
+</ul>
+<h4 id="1152-gitignore">11.5.2 <code>.gitignore</code> 必须包含</h4>
+<pre><code class="language-gitignore">.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets/
+*.db
+*.sqlite
+logs/
+data/
+_tmp/
+node_modules/
+__pycache__/
+*.log
+</code></pre>
+<h4 id="1153">11.5.3 代码规范</h4>
+<ul>
+<li><strong>全项目只有 <code>app/config.py</code> 直接读环境变量</strong>；</li>
+<li>日志、错误堆栈、前端源码、截图、录屏都不能出现 Key；</li>
+<li>报错信息不打印 Key，只打印“配置缺失”；</li>
+<li>如果实验室给的是团队共享 Key：只给需要的成员，不在群聊/截图里传；一旦出现过，视为已泄露，立即申请轮换。</li>
+</ul>
+<h4 id="1154">11.5.4 提交前三查 + 专业扫描</h4>
+<pre><code class="language-bash">git status
+git diff --cached
+git grep -nE &quot;sk-|api[_-]?key|password|private[_-]?key|token&quot; -- .
+git log --all --full-history -- .env
+gitleaks detect
+</code></pre>
+<p><strong>三条都干净、gitleaks 无告警，才允许 commit。</strong></p>
+<h4 id="1155">11.5.5 万一泄露了：处置顺序不能错</h4>
+<ol>
+<li><strong>第一步永远是去平台吊销 / 轮换 Key</strong>（比任何 Git 操作都重要）；</li>
+<li><code>git rm --cached .env</code>，确认 <code>.gitignore</code> 已包含 <code>.env</code>；</li>
+<li>如果历史里也有：用 <code>git filter-repo</code> 或 BFG 清理；</li>
+<li><code>git push --force</code>，通知队友重新 clone；</li>
+<li>在 <code>devlog/dayXX.md</code> 记录事故、原因、补救；</li>
+<li>记住：<strong>删除文件 ≠ 删除历史；只要 push 过，就当作已泄露。</strong></li>
+</ol>
+<h3 id="116">11.6 隐私规范</h3>
+<table>
+<thead>
+<tr>
+<th>原则</th>
+<th>具体做法</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>最小化</td>
+<td>能不存就不存；MVP 只保留会话内记忆</td>
+</tr>
+<tr>
+<td>不收集直接标识</td>
+<td>不存真实姓名、学号、手机号、身份证、银行卡、精确位置、通讯录</td>
+</tr>
+<tr>
+<td>日志只记元数据</td>
+<td>时间、requestId、HMAC 后的 sessionId、策略、风险等级、长度/哈希、模型、耗时、token、成功/失败；<strong>不记聊天原文</strong></td>
+</tr>
+<tr>
+<td>真实试用单独处理</td>
+<td>只存用例编号、策略、风险等级、耗时、token、成功/失败；不存原文/姓名/学号；原始记录试用结束后按约定期限删除</td>
+</tr>
+<tr>
+<td>仓库只放脱敏样例</td>
+<td><code>logs/</code>、<code>data/</code>、<code>*.db</code> 全部 gitignore，只提交 <code>logs/sample_call.jsonl</code></td>
+</tr>
+<tr>
+<td>第三方模型要确认</td>
+<td>是否用于训练、保留多久、是否出境；优先实验室提供的境内 API；发送前对直接标识信息脱敏</td>
+</tr>
+<tr>
+<td>知情同意 + 可撤回 + 可删除</td>
+<td>说明是实验性 AI、消息会经过第三方模型、可以用虚构情境、随时可停、可要求删除</td>
+</tr>
+<tr>
+<td>调试视图不公开</td>
+<td>策略/风险/置信度只给评审/开发者；公网 Demo 要加访问控制</td>
+</tr>
+<tr>
+<td>伦理审查</td>
+<td>试用同学前确认学校是否需要伦理审查；涉及未成年人需监护人同意</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="12_1">12. 风险与回退</h2>
+<table>
+<thead>
+<tr>
+<th>风险</th>
+<th>预防</th>
+<th>回退方案</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>组织者未确认“指定场景”</td>
+<td>D1 就问；先自拟并标注“待确认”</td>
+<td>场景与系统解耦，最后只改文案</td>
+</tr>
+<tr>
+<td>实验室 API 额度不足 / 限流</td>
+<td>开发用 <code>MOCK_LLM=true</code>；做调用预算；优先 Sev-1</td>
+<td>按优先级砍 A/B、红队数量；保安全用例</td>
+</tr>
+<tr>
+<td>模型过期 / 不可用</td>
+<td>D1 确认正式模型 ID；准备备用模型</td>
+<td>切 mock 或备用模型；README 写明</td>
+</tr>
+<tr>
+<td>模型不按格式输出</td>
+<td>提示词写死格式；解析兜底</td>
+<td>正则提取 + 默认值；再不行砍掉情绪标签</td>
+</tr>
+<tr>
+<td>成员时间不一致</td>
+<td>每天 15 分钟站会；每人只做一个可独立验收的模块</td>
+<td>减少并行，先保安全 + 能聊天</td>
+</tr>
+<tr>
+<td>密钥误提交</td>
+<td><code>.gitignore</code> + <code>git diff --cached</code> + gitleaks</td>
+<td>先轮换 Key → <code>git rm --cached</code> → 清历史 → 通知队友</td>
+</tr>
+<tr>
+<td>危机内容漏判 / 误判</td>
+<td>关键词 + 模型 + 人工复核 + 红队 + 误报探针</td>
+<td>补关键词；L2 改固定安全询问模板</td>
+</tr>
+<tr>
+<td>试用同学排期 / 伦理审查</td>
+<td>提前 3 天约人；先问学校是否要伦理审查</td>
+<td>换人 / 先做非正式可用性测试，但正式反馈仍要补</td>
+</tr>
+<tr>
+<td>演示环境崩了</td>
+<td>本地录屏 + 前端静态危机卡片</td>
+<td>用录屏 + 截图；现场切 mock 保底</td>
+</tr>
+<tr>
+<td>数据库 / 会话损坏</td>
+<td>MVP 本来就不建数据库</td>
+<td>重启即清空，重新开始</td>
+</tr>
+</tbody>
+</table>
+<h3 id="121-3">12.1 如果只剩 3 天</h3>
+<table>
+<thead>
+<tr>
+<th>剩余时间</th>
+<th>保什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>3 天</td>
+<td>能聊天 + 安全兜底 + README 能跑</td>
+</tr>
+<tr>
+<td>2 天</td>
+<td>评测核心用例 + 日志补齐</td>
+</tr>
+<tr>
+<td>1 天</td>
+<td>安全检查 + 演示录屏 + 打 tag</td>
+</tr>
+</tbody>
+</table>
+<p><strong>砍功能顺序：</strong> 公网部署 → 长期记忆 → 限流 → 情绪标签 → 红队数量。<br />
+<strong>永远不砍：</strong> 能聊天、安全三层、危机分支、README 能跑。</p>
+<hr />
+<h2 id="13_1">13. 开工前只需用户确认的问题</h2>
+<blockquote>
+<p><strong>使用说明：</strong> 下面这些问题，是“不确认就会影响方向”的。其他细节可以边做边定。请你去问组织者/团队，把问答记录（截图或文字）写进 <code>docs/08_日程记录.md</code>。</p>
+</blockquote>
+<h3 id="131-p08">13.1 P0：必须今天确认（8 个）</h3>
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>要确认什么</th>
+<th>为什么必须问</th>
+<th>去哪里问</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><strong>团队</strong>：是否已有 2—4 人？人员固定吗？谁是队长？分工写进申请表了吗？如果只有 1 人，组织者允许吗？</td>
+<td>比赛硬性要求 2—4 人、人员固定；单人可能不符合资格</td>
+<td>组织者 + 队友</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>截止时间</strong>：具体提交截止日期？评比时间？是否需要公网 Demo？技术向不答辩确认吗？</td>
+<td>排期不能按 14 天排满；不答辩就不用准备 PPT</td>
+<td>组织者 / 赛事群</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>指定场景</strong>：题目写“2—3 个指定场景”但没列，具体是哪几个？有统一脚本/格式吗？</td>
+<td>不确认可能整份场景作业口径不符</td>
+<td>组织者 / 赛事群</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>实验室 API</strong>：Base URL、正式模型 ID、Key 怎么发、额度多少、限流多少、是否用于训练、保留多久、有没有备用模型？</td>
+<td>关系到能不能真实调用、数据能不能出境、模型会不会过期</td>
+<td>实验室 / 组织者</td>
+</tr>
+<tr>
+<td>5</td>
+<td><strong>数据合规</strong>：学校是否要求伦理审查？知情同意模板谁提供？心理健康敏感数据怎么存、多久删？脱敏日志能进公开仓库吗？</td>
+<td>涉及试用同学和隐私合规</td>
+<td>学校 / 指导老师</td>
+</tr>
+<tr>
+<td>6</td>
+<td><strong>试用同学</strong>：哪两位？是否非开发者？是否愿意签知情同意？如果试用中出现高危风险，现实转介流程和负责人是谁？学校心理中心电话多少、谁核实？</td>
+<td>题目硬性要求；高危必须有真人兜底</td>
+<td>团队 + 学校心理中心</td>
+</tr>
+<tr>
+<td>7</td>
+<td><strong>技术栈</strong>：团队会 Python 还是 JS？最终定 FastAPI 吗？谁维护代码？谁逐行审懂 AI 生成的代码？</td>
+<td>避免中途换栈、没人能维护</td>
+<td>团队</td>
+</tr>
+<tr>
+<td>8</td>
+<td><strong>竞品调研</strong>：能否实际体验 Replika / 星野？如果只能公开资料，来源和日期怎么标？</td>
+<td>避免违反平台条款；调研要真实</td>
+<td>团队 + 组织者</td>
+</tr>
+</tbody>
+</table>
+<h3 id="132-p15">13.2 P1：可以边做边确认（5 个）</h3>
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>要确认什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>9</td>
+<td>GitHub 仓库归属、public / private、license、团队成员权限</td>
+</tr>
+<tr>
+<td>10</td>
+<td>评测预算：实验室允许多少次调用？几位标注员？是否做 A/B？谁做盲评？</td>
+</tr>
+<tr>
+<td>11</td>
+<td>模型安全行为：危机内容会不会拒答？有没有内容过滤？支持 temperature / seed 吗？</td>
+</tr>
+<tr>
+<td>12</td>
+<td>目标人群：是否限定 18 岁以上、只面向本校？是否涉及未成年人（涉及则需监护人同意）？</td>
+</tr>
+<tr>
+<td>13</td>
+<td>危机资源：12356 官方服务时间；学校心理中心 / 校内 24 小时值班电话；核验人、核验日期、下次复核日期</td>
+</tr>
+</tbody>
+</table>
+<h3 id="133">13.3 直接复制发群里的“最小清单”</h3>
+<blockquote>
+<p>老师好，我们是大创项目二技术向的队伍。想确认 5 件事：<br />
+①提交截止时间和评比时间；<br />
+②题目里的 2—3 个指定场景具体是哪几个、有没有统一脚本格式；<br />
+③实验室 API 的 Base URL、正式模型 ID、额度和限流；<br />
+④是否需要伦理审查、有没有知情同意模板；<br />
+⑤技术向是否确认不答辩、是否必须公网 Demo。<br />
+谢谢老师！</p>
+</blockquote>
+<hr />
+<h2 id="14">14. 小白术语词典</h2>
+<table>
+<thead>
+<tr>
+<th>词</th>
+<th>大白话</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>前端</td>
+<td>用户看到的网页：输入框、发送按钮、聊天气泡</td>
+</tr>
+<tr>
+<td>后端</td>
+<td>用户看不到的程序：收消息、调 AI、做安全判断、写日志</td>
+</tr>
+<tr>
+<td>API</td>
+<td>前端和后端约好的“传话地址”，比如 <code>/api/chat</code></td>
+</tr>
+<tr>
+<td>大模型 API</td>
+<td>后端把话发给 AI 模型、再把回复拿回来的通道</td>
+</tr>
+<tr>
+<td>环境变量</td>
+<td>放在 <code>.env</code> 里的配置，比如 API Key；代码只读它，不写死</td>
+</tr>
+<tr>
+<td>密钥泄漏</td>
+<td>把 Key 传到 GitHub，等于把家里钥匙拍照发网上；必须立刻作废重发</td>
+</tr>
+<tr>
+<td>MVP</td>
+<td>最小可用产品：功能最少、但能完整跑通、能验收</td>
+</tr>
+<tr>
+<td>仓库</td>
+<td>GitHub 上的项目文件夹，评审主要看这里</td>
+</tr>
+<tr>
+<td>commit</td>
+<td>一次代码存档，带一句说明；一天至少 2—4 次</td>
+</tr>
+<tr>
+<td>devlog</td>
+<td>开发日志：今天做了什么、遇到什么问题、明天做什么</td>
+</tr>
+<tr>
+<td>mock</td>
+<td>假模型：不真正调 API，返回固定回复，用来省额度、离线开发</td>
+</tr>
+<tr>
+<td>真实调用</td>
+<td>真正调用实验室 API，日志里标 <code>real</code>，最终证据必须用它</td>
+</tr>
+<tr>
+<td>脱敏</td>
+<td>把手机号、学号等敏感信息替换成 <code>[手机号]</code> 这类占位符</td>
+</tr>
+<tr>
+<td>L0—L4</td>
+<td>风险等级：从普通倾诉到紧急危机</td>
+</tr>
+<tr>
+<td>S0—S6</td>
+<td>沟通策略：从危机安全到资源转介</td>
+</tr>
+<tr>
+<td>Sev-1</td>
+<td>最严重的安全失败，一票否决、立即下线</td>
+</tr>
+<tr>
+<td>通过线</td>
+<td>跑评测之前就写死的合格标准，跑完不能改</td>
+</tr>
+<tr>
+<td>红队</td>
+<td>故意用危险/越权话术测试系统，看它会不会越界</td>
+</tr>
+<tr>
+<td>漏报</td>
+<td>有风险但系统没识别出来，最危险</td>
+</tr>
+<tr>
+<td>误报</td>
+<td>没风险但系统当成风险，会打扰用户</td>
+</tr>
+<tr>
+<td>HMAC</td>
+<td>一种不可逆的哈希方式，用来给 sessionId 打码</td>
+</tr>
+<tr>
+<td><code>.env</code></td>
+<td>本地存真实 Key 的文件，<strong>绝对不提交</strong></td>
+</tr>
+<tr>
+<td><code>.env.example</code></td>
+<td>提交到仓库的模板，只放占位符</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="15">15. 下一步：按顺序做，不要跳</h2>
+<table>
+<thead>
+<tr>
+<th>顺序</th>
+<th>动作</th>
+<th>完成标志</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>把第 13 章的 5 个 P0 问题发群/问组织者</td>
+<td>收到回复，截图存 <code>docs/08_日程记录.md</code></td>
+</tr>
+<tr>
+<td>2</td>
+<td>建仓库：<code>.gitignore</code> + <code>.env.example</code> + README 骨架 + <code>devlog/day01.md</code></td>
+<td><code>git status</code> 干净，没有 <code>.env</code></td>
+</tr>
+<tr>
+<td>3</td>
+<td>做最小闭环：页面 → 后端 → 实验室 API → 返回一句话</td>
+<td>浏览器能收到真实回复</td>
+</tr>
+<tr>
+<td>4</td>
+<td>把四份方案合并进 <code>docs/</code>，统一 L0—L4、S0—S6、Sev、日志字段、通过线</td>
+<td>术语只有一套，没有“已完成”的未验证声明</td>
+</tr>
+<tr>
+<td>5</td>
+<td>按第 5 章 Day 3 开始推进，每天只做一件小事、跑起来看、写三行日志、commit 一次</td>
+<td>每天有 commit，有 devlog，有验收记录</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="a">附录 A：开工第一天检查清单（打印出来打勾）</h2>
+<ul>
+<li>[ ] 已问组织者：截止时间、指定场景、API 信息、伦理审查、是否公网 Demo；</li>
+<li>[ ] 已问团队：人数、分工、队长、谁维护代码；</li>
+<li>[ ] 已建 GitHub 仓库（建议 private，等确认后再决定是否 public）；</li>
+<li>[ ] <code>.gitignore</code> 已排除 <code>.env</code>、<code>*.pem</code>、<code>*.key</code>、<code>*.db</code>、<code>logs/</code>、<code>data/</code>、<code>_tmp/</code>；</li>
+<li>[ ] <code>.env.example</code> 只有占位符，没有真实 Key；</li>
+<li>[ ] <code>README.md</code> 已写“产品是什么/不是什么”和安全声明；</li>
+<li>[ ] <code>devlog/day01.md</code> 已写三行；</li>
+<li>[ ] 最小闭环已经跑通，或已明确今天跑通的具体步骤；</li>
+<li>[ ] 已跑一次 <code>git status</code> + <code>git diff --cached</code>；</li>
+<li>[ ] 已明确安全红线否决人。</li>
+</ul>
+<h2 id="b">附录 B：危机回复示例（写死在代码里，不让模型生成）</h2>
+<blockquote>
+<p>我听到你说的话了。请让我帮你把这件事交给能真正帮到你的人：<br />
+· 全国心理援助热线：12356（服务时间以官方公布为准）<br />
+· 学校心理健康中心：从学校官网/学生手册核实后填入<br />
+· 如果有立刻伤害自己的冲动：拨打 120，或联系身边信任的人陪着你<br />
+· 紧急报警：110</p>
+<p>注意：上面的号码必须来自 <code>docs/10_转介信息表.md</code>，且标注核验人、核验日期、下次复核日期。<strong>模型不能自己编号码。</strong></p>
+</blockquote>
+<h2 id="c">附录 C：本提案没有声称的事情</h2>
+<ul>
+<li>没有声称“已经开发完成”；</li>
+<li>没有声称“仓库已经可以跑”；</li>
+<li>没有声称“已经做过真实用户测试”；</li>
+<li>没有声称“临床有效”；</li>
+<li>没有声称“12356 是 24 小时服务”（需要发布前再核实）。</li>
+</ul>
+<hr />
+<blockquote>
+<p><strong>最后一句：</strong> 先跑通，再变聪明，最后变安全。<br />
+功能可以砍，安全兜底不能砍；<br />
+代码可以少写，<code>.env</code> 一次都不能提交；<br />
+计划可以调整，但每天一篇 devlog、每天一次 <code>git diff --cached</code> 不能省。</p>
+</blockquote>
+</div>
+</body>
+</html>
