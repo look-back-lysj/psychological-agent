@@ -1,0 +1,11 @@
+{
+  "name": "psych-companion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "大学生情绪陪伴智能体原型",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node tests/run.js"
+  },
+  "license": "UNLICENSED"
+}
