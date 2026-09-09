@@ -1,4 +1,5 @@
 const API_TIMEOUT_MS = 20000;
+const nodeFetch = globalThis.fetch || require('node-fetch');
 
 function getConfig() {
   const base = (process.env.LLM_BASE_URL || '').replace(/\/$/, '');
@@ -24,7 +25,7 @@ async function callLLM(systemPrompt, messages, { retries = 1 } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
     try {
-      const res = await fetch(url, {
+      const res = await nodeFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
