@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>心屿 · 大学生情绪陪伴助手</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>心屿</h1>
+      <p class="subtitle">面向大学生学习压力和日常情绪困扰的非诊疗陪伴助手</p>
+      <p class="notice">重要提醒：这是一个实验性原型，不能代替心理咨询，也不能在危机时提供专业支持。</p>
+    </header>
+
+    <section class="chat-box">
+      <div id="messages" class="messages"></div>
+      <form id="chat-form" class="input-row">
+        <input id="message" type="text" placeholder="输入你想说的话，例如：最近考试压力很大" autocomplete="off" />
+        <button type="submit">发送</button>
+        <button type="button" id="new-chat" class="secondary">新对话</button>
+      </form>
+      <div class="foot-note">当前为会话内记忆，关闭或新对话后不会保留记录。</div>
+    </section>
+
+    <footer>
+      <p>技术向原型 · 面向课程作品使用</p>
+    </footer>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
