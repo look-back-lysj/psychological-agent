@@ -20,6 +20,7 @@ if (!fs.existsSync(publicDir)) {
 
 // 静态 require，便于 pkg 在打包时自动收集依赖
 const chatRoute = require('./src/chat');
+const { configRouter, memoryRouter } = require('./src/routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,9 +28,22 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(publicDir));
 app.use('/api/chat', chatRoute);
+app.use('/api/config', configRouter);
+app.use('/api/memory', memoryRouter);
 
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, time: new Date().toISOString(), model: process.env.LLM_MODEL || '未配置' });
+  let cfg = { model: '', configured: false };
+  try { cfg = require('./src/config').getPublicConfig(); } catch (e) { /* 忽略 */ }
+  const persona = require('./src/persona');
+  const prompts = require('./src/prompts');
+  res.json({
+    ok: true,
+    time: new Date().toISOString(),
+    model: cfg.model || '未配置',
+    configured: !!cfg.configured,
+    personaVersion: persona.PERSONA_VERSION,
+    promptVersion: prompts.PROMPT_VERSION
+  });
 });
 
 // 统一错误处理

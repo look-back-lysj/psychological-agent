@@ -23,6 +23,15 @@
     <symbol id="i-retry" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7" /><path d="M20 4v4h-4" /></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M7 7l1 12.5h8L17 7" /></symbol>
     <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6" /></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6" /></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1" /><path d="M12 2.6v2.3M12 19.1v2.3M4.4 7.3l2 1.2M17.6 15.5l2 1.2M4.4 16.7l2-1.2M17.6 8.5l2-1.2" /></symbol>
+    <symbol id="i-memory" viewBox="0 0 24 24"><path d="M12 4.6c-2.6-1.5-5.6-1.6-8-.6v13c2.4-1 5.4-.9 8 .6 2.6-1.5 5.6-1.6 8-.6v-13c-2.4-1-5.4-.9-8 .6z" /><path d="M12 4.6v13" /></symbol>
+    <symbol id="i-debug" viewBox="0 0 24 24"><path d="M9 5.5 12 3l3 2.5" /><rect x="6.6" y="8.2" width="10.8" height="9.2" rx="5.4" /><path d="M3.2 12.2h3.4M17.4 12.2h3.4M4.4 17.6l2.6-1.6M19.6 17.6 17 16M4.4 6.8 7 8.4M19.6 6.8 17 8.4" /></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 4.6 2.4 4.9 5.4.8-3.9 3.8.9 5.3-4.8-2.5-4.8 2.5.9-5.3L4.2 10.3l5.4-.8z" /></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.8 9.6 17.4 19 6.6" /></symbol>
+    <symbol id="i-edit" viewBox="0 0 24 24"><path d="M16.4 4.6a2 2 0 0 1 2.8 2.8L8.6 18 5 19l1-3.6z" /></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8.2" cy="15.8" r="3.6" /><path d="m10.8 13.2 8-8M16.2 7.8l2.2 2.2M18.6 5.4 20.6 7.4" /></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 5h5v5" /><path d="M19 5l-7.6 7.6" /><path d="M18 14.4V18a1.8 1.8 0 0 1-1.8 1.8H6A1.8 1.8 0 0 1 4.2 18V7.8A1.8 1.8 0 0 1 6 6h3.6" /></symbol>
   </svg>
 
   <div class="app" id="app">
@@ -49,6 +58,12 @@
       </nav>
 
       <div class="sidebar__foot">
+        <button class="ghost-btn" id="open-settings" type="button">
+          <svg class="icon"><use href="#i-settings" /></svg><span>模型设置</span>
+        </button>
+        <button class="ghost-btn" id="open-memory" type="button">
+          <svg class="icon"><use href="#i-memory" /></svg><span>长期记忆</span>
+        </button>
         <button class="ghost-btn" id="theme-toggle" type="button">
           <svg class="icon" id="theme-icon"><use href="#i-moon" /></svg>
           <span id="theme-text">深色模式</span>
@@ -71,6 +86,13 @@
           <p id="chat-subtitle">非诊疗情绪陪伴 · 记录只保存在本机浏览器</p>
         </div>
         <div class="topbar__actions">
+          <button class="pill pill--warn" id="model-warn" type="button" hidden>未配置模型</button>
+          <button class="icon-btn is-compact" id="debug-toggle" type="button" aria-pressed="false" aria-label="调试面板开关" title="调试面板（显示策略路由）">
+            <svg class="icon"><use href="#i-debug" /></svg>
+          </button>
+          <button class="icon-btn is-compact" id="open-settings-top" type="button" aria-label="打开设置" title="模型设置">
+            <svg class="icon"><use href="#i-settings" /></svg>
+          </button>
           <span class="pill" id="status-pill" data-state="loading">连接中…</span>
         </div>
       </header>
@@ -111,6 +133,245 @@
   </div>
 
   <div class="scrim" id="scrim" hidden></div>
+
+  <!-- 首次启动向导（未配置 API Key 时全屏出现） -->
+  <div class="wizard" id="wizard" hidden>
+    <div class="wizard__backdrop" id="wizard-backdrop"></div>
+    <div class="wizard__card" role="dialog" aria-modal="true" aria-labelledby="wizard-title">
+      <header class="wizard__head">
+        <div class="wizard__brand">
+          <span class="wizard__mark" aria-hidden="true">屿</span>
+          <span class="wizard__title" id="wizard-title">开始使用心屿</span>
+        </div>
+        <div class="wizard__dots" id="wizard-dots" aria-hidden="true">
+          <i class="is-active"></i><i></i><i></i>
+        </div>
+      </header>
+
+      <div class="wizard__body">
+        <!-- 第 1 步：欢迎与免责声明 -->
+        <section class="wizard__step is-active" data-step="1">
+          <h2 class="wizard__h">你好，我是心屿</h2>
+          <p class="wizard__p">一个面向大学生的<strong>非诊疗</strong>情绪陪伴助手。你可以聊聊最近的压力、心情，或者只是想找个人说说话。</p>
+          <div class="notice">
+            <p class="notice__title">在开始之前，请先知道</p>
+            <ul>
+              <li>我不是心理咨询师，<strong>不能替代专业帮助</strong>，也不做任何诊断。</li>
+              <li>如果你正处于危机中，请优先联系身边可信任的人、学校心理中心或当地紧急服务。</li>
+              <li>你发送的消息会转发给你配置的第三方模型服务用于生成回复；本机只保存模型配置本身。</li>
+            </ul>
+          </div>
+          <p class="wizard__p wizard__p--soft">接下来只需要三步：注册账号、创建 API Key、粘贴进来测试一次。</p>
+        </section>
+
+        <!-- 第 2 步：获取 Key -->
+        <section class="wizard__step" data-step="2">
+          <h2 class="wizard__h">先拿到一把 API Key</h2>
+          <p class="wizard__p">心屿需要一个模型服务来生成回复。推荐 DeepSeek，注册和调用都在网页上完成。</p>
+          <ol class="steps">
+            <li class="steps__item">
+              <span class="steps__num">1</span>
+              <div class="steps__main">
+                <p><a href="https://platform.deepseek.com" target="_blank" rel="noopener noreferrer">打开 platform.deepseek.com<svg class="icon"><use href="#i-external" /></svg></a> 注册账号，并按提示完成实名认证。</p>
+              </div>
+            </li>
+            <li class="steps__item">
+              <span class="steps__num">2</span>
+              <div class="steps__main">
+                <p>在左侧「充值」页充值。API 调用需要余额，但单价很低，日常聊天通常几元就够用很久。</p>
+                <p class="steps__link"><a href="https://platform.deepseek.com/top_up" target="_blank" rel="noopener noreferrer">前往充值页<svg class="icon"><use href="#i-external" /></svg></a></p>
+              </div>
+            </li>
+            <li class="steps__item">
+              <span class="steps__num">3</span>
+              <div class="steps__main">
+                <p><a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer">打开 API Keys 页面<svg class="icon"><use href="#i-external" /></svg></a>，点「创建 API Key」，复制以 <code>sk-</code> 开头的那串字符。</p>
+                <p class="steps__warn">Key 只在创建时完整显示一次，请先粘贴到下一步的输入框或自己保存好。</p>
+              </div>
+            </li>
+          </ol>
+          <p class="wizard__p wizard__p--soft">如果暂时不想配置，也可以在下方选择「暂不配置，先看看界面」。</p>
+        </section>
+
+        <!-- 第 3 步：填写并测试 -->
+        <section class="wizard__step" data-step="3">
+          <h2 class="wizard__h">粘贴 Key，我们测试一次</h2>
+          <div class="field">
+            <label class="field__label" for="wizard-key">DeepSeek API Key</label>
+            <div class="field__row">
+              <input class="input" id="wizard-key" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false" />
+              <button class="btn btn--ghost" id="wizard-key-eye" type="button">显示</button>
+            </div>
+            <p class="field__hint">只提交给本机服务保存，不会写进浏览器存储，也不会出现在日志里。</p>
+          </div>
+          <details class="adv" id="wizard-adv">
+            <summary>高级设置（一般不用改）</summary>
+            <div class="field">
+              <label class="field__label" for="wizard-model">模型</label>
+              <select class="input" id="wizard-model">
+                <option value="deepseek-flash">deepseek-flash（推荐，便宜快）</option>
+                <option value="deepseek-v4-pro">deepseek-v4-pro（更稳，稍贵）</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="field__label" for="wizard-baseurl">API 地址</label>
+              <input class="input" id="wizard-baseurl" type="text" autocomplete="off" spellcheck="false" />
+              <p class="field__hint">默认 https://api.deepseek.com，使用其它兼容服务时才需要修改。</p>
+            </div>
+          </details>
+          <p class="form-result" id="wizard-result" role="status" hidden></p>
+        </section>
+      </div>
+
+      <footer class="wizard__foot">
+        <button class="link-btn" id="wizard-skip" type="button">暂不配置，先看看界面</button>
+        <div class="wizard__nav">
+          <button class="btn" id="wizard-back" type="button" hidden>
+            <svg class="icon"><use href="#i-arrow-left" /></svg><span>上一步</span>
+          </button>
+          <button class="btn btn--primary" id="wizard-next" type="button">开始设置</button>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <div class="drawer-scrim" id="drawer-scrim" hidden></div>
+
+  <!-- 设置抽屉 -->
+  <aside class="drawer" id="settings-drawer" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
+    <header class="drawer__head">
+      <h2 id="settings-title">模型设置</h2>
+      <button class="icon-btn" id="settings-close" type="button" aria-label="关闭设置">
+        <svg class="icon"><use href="#i-close" /></svg>
+      </button>
+    </header>
+    <div class="drawer__body">
+      <div class="field">
+        <label class="field__label" for="setting-model">模型</label>
+        <select class="input" id="setting-model">
+          <option value="deepseek-flash">deepseek-flash（推荐，便宜快）</option>
+          <option value="deepseek-v4-pro">deepseek-v4-pro（更稳，稍贵）</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label class="field__label" for="setting-temperature">温度 <span class="field__value" id="setting-temperature-value">0.8</span></label>
+        <input class="range" id="setting-temperature" type="range" min="0" max="2" step="0.1" value="0.8" />
+        <p class="field__hint">控制回复的随机程度，只在关闭思考模式时生效。</p>
+      </div>
+
+      <div class="field">
+        <label class="field__label" for="setting-maxtokens">最大输出 max_tokens</label>
+        <input class="input" id="setting-maxtokens" type="number" min="64" max="8192" step="64" value="512" inputmode="numeric" />
+        <p class="field__hint">64–8192，越大回复可以越长，也越慢。</p>
+      </div>
+
+      <div class="field">
+        <span class="field__label">思考模式</span>
+        <label class="switch">
+          <input type="checkbox" id="setting-thinking" />
+          <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+          <span class="switch__text">开启后回复更谨慎，但更慢；开启时温度参数不生效。</span>
+        </label>
+      </div>
+
+      <div class="field">
+        <span class="field__label">API Key</span>
+        <div class="keybox">
+          <span class="keybox__value" id="setting-key-masked">未配置</span>
+          <div class="keybox__actions">
+            <button class="btn btn--ghost" id="setting-key-change" type="button">更换</button>
+            <button class="btn btn--ghost btn--danger-ghost" id="setting-key-clear" type="button">清除</button>
+          </div>
+        </div>
+        <div class="field__row" id="setting-key-row" hidden>
+          <input class="input" id="setting-key-input" type="password" placeholder="粘贴新的 API Key" autocomplete="off" spellcheck="false" />
+          <button class="btn btn--ghost" id="setting-key-eye" type="button">显示</button>
+        </div>
+        <p class="field__hint">Key 只保存在本机服务端配置文件；浏览器不保存，也不会写进日志。</p>
+      </div>
+
+      <div class="field">
+        <span class="field__label">调试面板</span>
+        <label class="switch">
+          <input type="checkbox" id="setting-debug" />
+          <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+          <span class="switch__text">在每条回复下方显示这一轮的风险等级、策略与完整路由 JSON。</span>
+        </label>
+      </div>
+
+      <div class="drawer__extra">
+        <button class="ghost-btn" id="open-wizard-again" type="button">
+          <svg class="icon"><use href="#i-key" /></svg><span>重新运行初次设置向导</span>
+        </button>
+      </div>
+
+      <p class="form-result" id="settings-result" role="status" hidden></p>
+    </div>
+    <footer class="drawer__foot">
+      <button class="btn btn--ghost" id="settings-test" type="button">测试连接</button>
+      <button class="btn btn--primary" id="settings-save" type="button">保存设置</button>
+    </footer>
+  </aside>
+
+  <!-- 长期记忆抽屉 -->
+  <aside class="drawer" id="memory-drawer" role="dialog" aria-modal="true" aria-labelledby="memory-title" hidden>
+    <header class="drawer__head">
+      <h2 id="memory-title">长期记忆</h2>
+      <button class="icon-btn" id="memory-close" type="button" aria-label="关闭记忆面板">
+        <svg class="icon"><use href="#i-close" /></svg>
+      </button>
+    </header>
+    <div class="drawer__body">
+      <div class="field">
+        <label class="switch switch--boxed">
+          <input type="checkbox" id="memory-enabled" />
+          <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+          <span class="switch__text"><strong>启用长期记忆</strong><br />关闭后不会再记住新内容，已有记忆仍可查看。</span>
+        </label>
+      </div>
+
+      <p class="note note--privacy">记忆只保存在这台电脑上，不会上传；你可以随时编辑或删除，也能一键清空。</p>
+
+      <div class="field">
+        <span class="field__label">手动添加一条</span>
+        <div class="mem-add">
+          <input class="input" id="memory-add-text" type="text" maxlength="60" placeholder="例如：最近在为毕业论文焦虑" autocomplete="off" />
+          <select class="input" id="memory-add-category" aria-label="记忆分类"></select>
+          <button class="btn btn--primary" id="memory-add-btn" type="button">添加</button>
+        </div>
+      </div>
+
+      <div class="mem-head">
+        <span class="field__label">共 <span id="memory-count">0</span> 条</span>
+        <span class="mem-head__hint" id="memory-updated"></span>
+      </div>
+
+      <p class="mem-empty" id="memory-empty" hidden>还没有记住任何内容。聊到对陪伴有用的稳定事实时，心屿会试着记下来，你也可以在上面手动添加。</p>
+      <ul class="mem-list" id="memory-list"></ul>
+    </div>
+    <footer class="drawer__foot drawer__foot--split">
+      <span class="drawer__foot-note" id="memory-foot-note"></span>
+      <button class="btn btn--danger" id="memory-clear" type="button">清空全部记忆</button>
+    </footer>
+  </aside>
+
+  <!-- 二次确认弹窗（不使用原生 confirm，避免阻塞页面） -->
+  <dialog class="modal modal--confirm" id="confirm-modal" aria-labelledby="confirm-title">
+    <div class="modal__head">
+      <h2 id="confirm-title">确认操作</h2>
+      <button class="icon-btn" id="confirm-close" type="button" aria-label="关闭">
+        <svg class="icon"><use href="#i-close" /></svg>
+      </button>
+    </div>
+    <div class="modal__body">
+      <p id="confirm-message"></p>
+    </div>
+    <div class="modal__foot">
+      <button class="btn" id="confirm-cancel" type="button">取消</button>
+      <button class="btn btn--danger" id="confirm-ok" type="button">确定</button>
+    </div>
+  </dialog>
 
   <dialog class="modal" id="about-modal" aria-labelledby="about-title">
     <div class="modal__head">
