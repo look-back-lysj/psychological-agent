@@ -62,7 +62,8 @@ npm start
 
 | 形态 | 位置 | 说明 |
 | --- | --- | --- |
-| 安装包 | `dist/心屿_2.0.0_x64-setup.exe` | 约 17.8 MB，**当前用户安装，不需要管理员权限** |
+| **在线下载** | [Release v2.0.0](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases/tag/v2.0.0) → `xinyu-2.0.0-x64-setup.exe` | 约 17 MB，**当前用户安装，不需要管理员权限** |
+| 本地产物 | `dist/心屿_2.0.0_x64-setup.exe` | 与在线版本一致 |
 | 便携版 | `dist/心屿桌面版/` | 双击 `心屿.exe` 即可，绿色免安装 |
 
 桌面版做了什么：
