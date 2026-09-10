@@ -18,6 +18,14 @@ const { STRATEGY_META } = require('./strategy');
 const { normalizeText } = require('./utils');
 
 const AGENT_VERSION = 'v3.0';
+
+/**
+ * 是否启用多智能体流水线。
+ * 设 XINYU_AGENTS=off 可退回单模型路径——用于 A/B 对照实验（证明「更像真人」）。
+ */
+function agentsEnabled() {
+  return String(process.env.XINYU_AGENTS || '').toLowerCase() !== 'off';
+}
 const NL = String.fromCharCode(10);
 
 // 允许模型微调的策略集合（S0 危机 / S6 转介 由规则层独占）
@@ -122,6 +130,7 @@ function fallbackPlan(ctx, reason) {
  * 「观」：感知 + 定调。失败时返回降级 plan，绝不抛出。
  */
 async function appraise(ctx) {
+  if (!agentsEnabled()) return fallbackPlan(ctx, 'agents_off');
   try {
     const res = await callLLM(APPRAISE_SYSTEM, [{ role: 'user', text: buildAppraisePrompt(ctx) }], { retries: 0 });
     const obj = parseJsonObject(res && res.content);
@@ -215,6 +224,7 @@ function buildCriticPrompt(ctx, draft) {
  * 「校」：条件触发。失败时返回原稿，绝不阻塞。
  */
 async function review(ctx, draft) {
+  if (!agentsEnabled()) return { ok: true, revised: null, issues: [], degraded: true };
   try {
     const res = await callLLM(CRITIC_SYSTEM, [{ role: 'user', text: buildCriticPrompt(ctx, draft) }], { retries: 0 });
     const obj = parseJsonObject(res && res.content);
@@ -229,6 +239,7 @@ async function review(ctx, draft) {
 
 module.exports = {
   AGENT_VERSION,
+  agentsEnabled,
   MODEL_TUNABLE,
   AI_CLICHE,
   buildAppraisePrompt,

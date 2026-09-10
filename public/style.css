@@ -68,34 +68,53 @@
   --focus: rgba(91, 141, 239, 0.35);
   --scrim: rgba(17, 24, 39, 0.42);
 
-  /* 圆角体系 */
+  /* 圆角体系（12 / 16 / 20 / 28 形成层级节奏） */
   --r-xs: 6px;
   --r-sm: 8px;
   --r: 12px;
   --r-md: 14px;
   --r-lg: 16px;
   --r-xl: 20px;
+  --r-2xl: 28px;
   --r-full: 999px;
 
-  /* 阴影（统一 sm / md / lg / xl 四级，hover 时平滑加深） */
-  --sh-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
-  --sh-sm: 0 1px 2px rgba(15, 23, 42, 0.05), 0 2px 6px rgba(15, 23, 42, 0.05);
-  --sh: 0 8px 24px rgba(15, 23, 42, 0.08);
-  --sh-lg: 0 22px 48px rgba(15, 23, 42, 0.16);
-  --sh-md: 0 6px 18px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.05);
-  --sh-xl: 0 34px 76px rgba(15, 23, 42, 0.18), 0 12px 28px rgba(15, 23, 42, 0.08);
+  /* 阴影：统一 sm / md / lg / xl 四级（环境光 + 主光双层，hover 时平滑加深） */
+  --sh-xs: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --sh-sm: 0 1px 2px rgba(15, 23, 42, 0.05), 0 3px 8px -2px rgba(15, 23, 42, 0.07);
+  --sh: 0 6px 20px -8px rgba(15, 23, 42, 0.1), 0 2px 6px -2px rgba(15, 23, 42, 0.05);
+  --sh-md: 0 10px 28px -12px rgba(15, 23, 42, 0.14), 0 3px 10px -4px rgba(15, 23, 42, 0.07);
+  --sh-lg: 0 20px 48px -18px rgba(15, 23, 42, 0.2), 0 8px 18px -10px rgba(15, 23, 42, 0.09);
+  --sh-xl: 0 36px 78px -26px rgba(15, 23, 42, 0.26), 0 14px 34px -18px rgba(15, 23, 42, 0.12);
+  /* hover 加深：升一级阴影，配合 transition 平滑过渡而不是跳变 */
+  --sh-sm-hover: 0 2px 4px rgba(15, 23, 42, 0.06), 0 8px 18px -8px rgba(15, 23, 42, 0.14);
+  --sh-md-hover: 0 14px 34px -14px rgba(15, 23, 42, 0.18), 0 5px 14px -6px rgba(15, 23, 42, 0.09);
+  --sh-lg-hover: 0 26px 58px -20px rgba(15, 23, 42, 0.24), 0 10px 22px -12px rgba(15, 23, 42, 0.11);
 
   /* 玻璃拟态材质：半透明底 + 1px 高光内描边 */
-  --glass: rgba(255, 255, 255, 0.70);
+  --glass: rgba(255, 255, 255, 0.7);
   --glass-strong: rgba(255, 255, 255, 0.86);
-  --glass-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.50);
+  --glass-panel: rgba(255, 255, 255, 0.8);
+  --glass-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
   --glass-top: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.55);
   --glass-blur: 18px;
 
-  /* 背景装饰光晕 */
+  /* 背景装饰光晕（大范围底色光，见 17.1） */
   --glow-a: rgba(91, 141, 239, 0.13);
-  --glow-b: rgba(79, 209, 197, 0.10);
+  --glow-b: rgba(79, 209, 197, 0.1);
   --glow-c: rgba(129, 140, 248, 0.09);
+
+  /* 氛围层：多点光晕（每个光点透明度均 ≤8%）与噪点质感 */
+  --glow-veil-a: rgba(91, 141, 239, 0.075);
+  --glow-veil-b: rgba(79, 209, 197, 0.065);
+  --glow-veil-c: rgba(129, 140, 248, 0.05);
+  --noise-alpha: 0.028;
+
+  /* 极淡主色（胶囊底色 / 选中态，≤8%）与细描边 */
+  --brand-veil: rgba(91, 141, 239, 0.07);
+  --brand-line: rgba(91, 141, 239, 0.34);
+  --selection: rgba(91, 141, 239, 0.2);
+  --focus-halo: rgba(91, 141, 239, 0.16);
 
   /* 间距（8 的倍数体系） */
   --sp-1: 4px;
@@ -106,14 +125,14 @@
   --sp-6: 32px;
   --sp-7: 40px;
 
-  /* 字号 */
+  /* 字号阶梯：12 / 13 / 15 / 17 / 22 / 28 */
   --fs-xs: 12px;
   --fs-sm: 13px;
   --fs-md: 14px;
   --fs-base: 15px;
   --fs-lg: 17px;
-  --fs-xl: 20px;
-  --fs-2xl: 26px;
+  --fs-xl: 22px;
+  --fs-2xl: 28px;
   --fs-3xl: 32px;
 
   /* 动效 */
@@ -174,21 +193,37 @@ html[data-theme="dark"] {
   --scrim: rgba(3, 7, 12, 0.62);
 
   --sh-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --sh-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
-  --sh: 0 10px 28px rgba(0, 0, 0, 0.45);
-  --sh-lg: 0 26px 56px rgba(0, 0, 0, 0.6);
-  --sh-md: 0 8px 22px rgba(0, 0, 0, 0.42);
-  --sh-xl: 0 36px 80px rgba(0, 0, 0, 0.62);
+  --sh-sm: 0 1px 3px rgba(0, 0, 0, 0.42), 0 3px 10px -4px rgba(0, 0, 0, 0.45);
+  --sh: 0 8px 24px -10px rgba(0, 0, 0, 0.5), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
+  --sh-md: 0 12px 30px -14px rgba(0, 0, 0, 0.55), 0 4px 12px -4px rgba(0, 0, 0, 0.4);
+  --sh-lg: 0 24px 54px -20px rgba(0, 0, 0, 0.66), 0 10px 22px -12px rgba(0, 0, 0, 0.45);
+  --sh-xl: 0 40px 86px -30px rgba(0, 0, 0, 0.72), 0 16px 38px -20px rgba(0, 0, 0, 0.5);
+  --sh-sm-hover: 0 2px 6px rgba(0, 0, 0, 0.5), 0 8px 20px -8px rgba(0, 0, 0, 0.5);
+  --sh-md-hover: 0 16px 38px -16px rgba(0, 0, 0, 0.6), 0 6px 16px -6px rgba(0, 0, 0, 0.45);
+  --sh-lg-hover: 0 30px 64px -22px rgba(0, 0, 0, 0.7), 0 12px 26px -14px rgba(0, 0, 0, 0.5);
 
   /* 深色下的玻璃更沉、更含蓄 */
-  --glass: rgba(22, 27, 34, 0.70);
+  --glass: rgba(22, 27, 34, 0.7);
   --glass-strong: rgba(22, 27, 34, 0.88);
+  --glass-panel: rgba(22, 27, 34, 0.82);
   --glass-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
   --glass-top: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  --glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 
   --glow-a: rgba(90, 130, 220, 0.16);
-  --glow-b: rgba(60, 190, 180, 0.10);
+  --glow-b: rgba(60, 190, 180, 0.1);
   --glow-c: rgba(110, 120, 210, 0.12);
+
+  /* 深色氛围层：提高层级对比，同时压低饱和度，避免发灰发脏 */
+  --glow-veil-a: rgba(96, 138, 232, 0.08);
+  --glow-veil-b: rgba(60, 186, 176, 0.06);
+  --glow-veil-c: rgba(122, 132, 224, 0.055);
+  --noise-alpha: 0.026;
+
+  --brand-veil: rgba(122, 162, 240, 0.08);
+  --brand-line: rgba(122, 162, 240, 0.32);
+  --selection: rgba(122, 162, 240, 0.26);
+  --focus-halo: rgba(122, 162, 240, 0.2);
 }
 
 /* =======================================================================
@@ -3444,3 +3479,919 @@ dialog.modal.is-closing::backdrop {
     transform: none;
   }
 }
+
+/* =========================================================================
+   18. 视觉高级感重做（氛围 / 英雄区 / 记忆回顾 / 材质 / 排版 / 微交互）
+   -------------------------------------------------------------------------
+   本节只做「加法与精修」，不改动任何既有 class 的结构语义与布局：
+     18.1  氛围层：多点极淡光晕 + 细噪点
+     18.2  首屏英雄区：徽标 / 细环 / 入场编排
+     18.3  记忆回顾区：玻璃卡片 + 左侧渐变细线 + 展示型胶囊
+     18.4  建议胶囊与演示模式入口
+     18.5  材质与光影：玻璃、四级阴影、圆角节奏
+     18.6  排版精修：字号阶梯、字距、行高、数字
+     18.7  交互三态与双层焦点环
+     18.8  消息操作按钮 hover 浮现
+     18.9  选区与滚动条
+     18.10 移动端减负（≤860px）
+     18.11 无障碍：完整尊重「减少动效」偏好
+   约定：新增动画只用 transform / opacity；光晕漂移虽属氛围层，同样只用 transform。
+   注意：入场动画统一用 backwards（而不是 both）填充 —— both 会把结束帧的
+   transform / opacity 锁在动画层，导致 hover 的轻微上浮失效；backwards 只保证
+   延迟期间呈现起始态，动画结束后重新交还给常规层叠，三态反馈才能正常工作。
+   ========================================================================= */
+
+/* ── 18.1 氛围层：多点径向光晕 + 细噪点 ───────────────────────────────── */
+
+:root {
+  /* 细环 / 徽标高光用的极淡色（深色下另行降低饱和度） */
+  --ring-a: rgba(91, 141, 239, 0.55);
+  --ring-b: rgba(79, 209, 197, 0.8);
+  --hero-core-gloss: rgba(255, 255, 255, 0.38);
+}
+
+html[data-theme="dark"] {
+  --ring-a: rgba(122, 162, 240, 0.5);
+  --ring-b: rgba(76, 199, 187, 0.68);
+  --hero-core-gloss: rgba(255, 255, 255, 0.2);
+}
+
+/* 光晕：brand 与 teal 各一处（各点透明度 ≤8%），34s 缓慢漂移。
+   fixed + pointer-events:none：不参与滚动、不拦截交互，也不进入无障碍树。 */
+body::before {
+  content: "";
+  position: fixed;
+  inset: -22%;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(closest-side, var(--glow-veil-a), transparent 72%),
+    radial-gradient(closest-side, var(--glow-veil-b), transparent 74%),
+    radial-gradient(closest-side, var(--glow-veil-c), transparent 78%);
+  background-size: 76% 62%, 60% 52%, 88% 70%;
+  background-position: 4% 0%, 98% 10%, 50% 104%;
+  background-repeat: no-repeat;
+  transform: translate3d(0, 0, 0);
+  animation: veil-drift 34s var(--ease) infinite alternate;
+}
+
+/* 反向的第二层光晕（既有 .bg-aurora），让氛围有轻微视差纵深 */
+.bg-aurora {
+  background-image: radial-gradient(760px 460px at 8% -6%, var(--glow-veil-a), transparent 64%),
+    radial-gradient(660px 420px at 96% 2%, var(--glow-veil-b), transparent 66%),
+    radial-gradient(900px 620px at 52% 116%, var(--glow-veil-c), transparent 72%);
+  animation: aurora-drift 46s var(--ease) infinite alternate;
+}
+
+/* 噪点：内联 SVG feTurbulence（无外部依赖），透明度 ≤3%，
+   只用于消除纯色背景的塑料感，pointer-events:none 不参与交互。
+   说明：turbulence 自带随机的 alpha 与中间调 RGB，直接用几乎看不出颗粒，
+   这里先用 feColorMatrix 压成不透明灰阶、再用 feComponentTransfer 拉高对比，
+   让 ≤3% 的不透明度下仍保留约 1–2 级灰度的细颗粒（近似胶片颗粒）。 */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  opacity: var(--noise-alpha);
+  background-repeat: repeat;
+  background-size: 180px 180px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0.33 0.33 0.33 0 0 0.33 0.33 0.33 0 0 0.33 0.33 0.33 0 0 0 0 0 0 1'/%3E%3CfeComponentTransfer%3E%3CfeFuncR type='linear' slope='4' intercept='-1.8'/%3E%3CfeFuncG type='linear' slope='4' intercept='-1.8'/%3E%3CfeFuncB type='linear' slope='4' intercept='-1.8'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* 外壳与主区改为透明，让上面两层氛围真正透出来；
+   底色仍由 body 提供，视觉与改前等价（只是多了光晕与噪点）。 */
+.app,
+.main {
+  background-color: transparent;
+}
+
+@keyframes veil-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  45% {
+    transform: translate3d(1.6%, -1.2%, 0) scale(1.04);
+  }
+  100% {
+    transform: translate3d(-1.4%, 1.6%, 0) scale(1.07);
+  }
+}
+
+@keyframes aurora-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(0.8%, -1.8%, 0) scale(1.03);
+  }
+}
+
+/* ── 18.2 首屏英雄区：徽标 / 细环 / 入场编排 ───────────────────────────── */
+
+/* 入场改由子元素各自编排（mark → 标题 → 副标题 → 胶囊），容器不再整体动画 */
+.welcome__inner {
+  animation: none;
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  text-align: center;
+}
+
+.hero__mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 84px;
+  height: 84px;
+  margin-bottom: var(--sp-1);
+  isolation: isolate;
+  animation: hero-mark-in 680ms var(--ease-spring) backwards;
+}
+
+/* 两层之间的光晕扩散：极淡径向光，随呼吸略微起伏 */
+.hero__mark::before {
+  content: "";
+  position: absolute;
+  inset: -38%;
+  z-index: -2;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--glow-brand), transparent 74%);
+  opacity: 0.5;
+  pointer-events: none;
+  animation: hero-halo 7.5s var(--ease) infinite;
+}
+
+/* 外层细环：conic 渐变描边（遮罩成环），缓慢旋转 + 呼吸 */
+.hero__ring {
+  position: absolute;
+  inset: -11px;
+  z-index: -1;
+  padding: 1px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    var(--ring-a) 78deg,
+    var(--ring-b) 150deg,
+    transparent 232deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0.7;
+  pointer-events: none;
+  animation: hero-ring-spin 26s linear infinite, hero-ring-breathe 7s var(--ease) infinite;
+}
+
+/* 内层：渐变圆角方块承载「屿」字，字距 + 内阴影 + 顶部高光 */
+.hero__core {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 26px;
+  background-color: var(--brand);
+  background-image: radial-gradient(62% 56% at 28% 18%, var(--hero-core-gloss), transparent 68%),
+    var(--grad-brand);
+  color: #ffffff;
+  font-size: 33px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-indent: 0.06em;
+  text-shadow: 0 -1px 0 rgba(15, 32, 62, 0.24), 0 1px 1px rgba(255, 255, 255, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
+    inset 0 -12px 20px -12px rgba(8, 20, 44, 0.55), 0 16px 34px -12px var(--glow-brand);
+}
+
+/* 标题：安静但有分量（26–30px / 600 / 字距 .02em） */
+.hero__title {
+  color: var(--text);
+  font-size: clamp(26px, 4.1vw, 30px);
+  font-weight: 600;
+  line-height: 1.42;
+  letter-spacing: 0.02em;
+  text-wrap: balance;
+  animation: rise-soft 640ms var(--ease-out) 80ms backwards;
+}
+
+/* 副标题：更轻、更留白 */
+.hero__sub {
+  max-width: 42ch;
+  color: var(--text-faint);
+  font-size: var(--fs-md);
+  line-height: 1.75;
+  letter-spacing: 0.01em;
+  animation: rise-soft 640ms var(--ease-out) 160ms backwards;
+}
+
+@keyframes hero-mark-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.74) translate3d(0, 12px, 0);
+  }
+  62% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+}
+
+@keyframes hero-ring-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes hero-ring-breathe {
+  0%,
+  100% {
+    opacity: 0.5;
+    scale: 1;
+  }
+  50% {
+    opacity: 0.95;
+    scale: 1.035;
+  }
+}
+
+@keyframes hero-halo {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.97);
+  }
+  50% {
+    opacity: 0.62;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes rise-soft {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+/* ── 18.3 记忆回顾区：温柔而不喧宾夺主 ─────────────────────────────────── */
+
+.recall {
+  position: relative;
+  width: 100%;
+  max-width: 560px;
+  padding: var(--sp-4) var(--sp-5) var(--sp-4) calc(var(--sp-5) + 2px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  background-color: var(--glass);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+  backdrop-filter: blur(14px) saturate(1.25);
+  box-shadow: var(--sh-sm), var(--glass-edge);
+  text-align: left;
+  animation: rise-soft 640ms var(--ease-out) 240ms backwards;
+}
+
+/* 左侧 2px 渐变细线：情绪的「被记住」感，不抢主体 */
+.recall::before {
+  content: "";
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  left: 0;
+  width: 2px;
+  border-radius: var(--r-full);
+  background: linear-gradient(180deg, var(--ring-a) 0%, var(--ring-b) 58%, transparent 100%);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+/* 小标签：极小号大写感（中文用字距拉开 + faint 色） */
+.recall__label {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  line-height: 1.4;
+}
+
+.recall__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 展示型胶囊：brand 极淡底色（≤8%）+ 无按钮感（默认光标，不做按下反馈） */
+.recall__chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 5px var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--r-full);
+  background-color: var(--brand-veil);
+  color: var(--text-soft);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  cursor: default;
+  transition: transform var(--dur) var(--ease-out), border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease), color var(--dur) var(--ease);
+  animation: rise-soft 480ms var(--ease-out) backwards;
+}
+
+.recall__chip:hover {
+  transform: translateY(-1px);
+  border-color: var(--brand-line);
+  color: var(--text);
+  box-shadow: var(--sh-sm-hover);
+}
+
+.recall__list > li:nth-child(1) {
+  animation-delay: 300ms;
+}
+
+.recall__list > li:nth-child(2) {
+  animation-delay: 360ms;
+}
+
+.recall__list > li:nth-child(3) {
+  animation-delay: 420ms;
+}
+
+.recall__list > li:nth-child(4) {
+  animation-delay: 480ms;
+}
+
+.recall__list > li:nth-child(5) {
+  animation-delay: 540ms;
+}
+
+.recall__list > li:nth-child(6) {
+  animation-delay: 600ms;
+}
+
+/* ── 18.4 建议胶囊与演示模式入口 ───────────────────────────────────────── */
+
+.starters {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+}
+
+/* 「可以这样开始」：与「我记得」同一套小标签语言 */
+.starters__label {
+  color: var(--text-faint);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  line-height: 1.4;
+  animation: rise-soft 620ms var(--ease-out) 320ms backwards;
+}
+
+/* 建议容器保持整行宽度（空态也不会塌缩），逐条 stagger */
+.suggestions {
+  width: 100%;
+}
+
+.suggestions .suggestion {
+  animation: rise-soft 520ms var(--ease-out) backwards;
+}
+
+.suggestions .suggestion:nth-child(1) {
+  animation-delay: 360ms;
+}
+
+.suggestions .suggestion:nth-child(2) {
+  animation-delay: 420ms;
+}
+
+.suggestions .suggestion:nth-child(3) {
+  animation-delay: 480ms;
+}
+
+.suggestions .suggestion:nth-child(4) {
+  animation-delay: 540ms;
+}
+
+.suggestions .suggestion:nth-child(5) {
+  animation-delay: 600ms;
+}
+
+.suggestions .suggestion:nth-child(6) {
+  animation-delay: 660ms;
+}
+
+/* 若 JS 写入 --i，则按「每条 +60ms」精确编排（放在最后以覆盖 nth-child） */
+.suggestions .suggestion {
+  animation-delay: calc(360ms + var(--i, 0) * 60ms);
+}
+
+/* 演示模式入口：低调但有吸引力的提示条（虚线描边 + 呼吸 spark + 流动渐变） */
+.demo-entry {
+  position: relative;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  max-width: 100%;
+  padding: 10px var(--sp-5);
+  overflow: hidden;
+  isolation: isolate;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--r-full);
+  background-color: var(--brand-veil);
+  color: var(--text-soft);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease);
+  animation: rise-soft 620ms var(--ease-out) 560ms backwards;
+}
+
+.demo-entry > .icon,
+.demo-entry > span {
+  position: relative;
+  z-index: 1;
+}
+
+/* spark 图标轻微呼吸 */
+.demo-entry .icon {
+  color: var(--brand);
+  font-size: 15px;
+  animation: demo-spark 3.8s var(--ease) infinite;
+}
+
+/* 底层流动光带：只做 transform 旋转，hover / 键盘聚焦时才开始跑 */
+.demo-entry::before {
+  content: "";
+  position: absolute;
+  inset: -140%;
+  z-index: 0;
+  background: conic-gradient(
+    from 0deg at 50% 50%,
+    transparent 0deg 190deg,
+    rgba(91, 141, 239, 0.3) 236deg,
+    rgba(79, 209, 197, 0.34) 268deg,
+    transparent 316deg
+  );
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 320ms var(--ease);
+  animation: demo-flow 5.5s linear infinite;
+  animation-play-state: paused;
+}
+
+/* 上层渐变细边（1px，遮罩成环），hover 时替换虚线描边 */
+.demo-entry::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  padding: 1px;
+  border-radius: inherit;
+  background: var(--grad-brand);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.demo-entry:hover,
+.demo-entry:focus-visible {
+  border-color: transparent;
+  color: var(--text);
+  transform: translateY(-1px);
+  box-shadow: var(--sh-sm-hover);
+}
+
+.demo-entry:hover::before,
+.demo-entry:focus-visible::before {
+  opacity: 0.5;
+  animation-play-state: running;
+}
+
+.demo-entry:hover::after,
+.demo-entry:focus-visible::after {
+  opacity: 0.85;
+}
+
+.demo-entry:active {
+  transform: translateY(1px);
+}
+
+@keyframes demo-flow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes demo-spark {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.14);
+    opacity: 1;
+  }
+}
+
+/* 页脚免责声明：最后入场，保持克制 */
+.welcome__notice {
+  animation: rise-soft 620ms var(--ease-out) 700ms backwards;
+}
+
+/* ── 18.5 材质与光影：玻璃、四级阴影、圆角节奏 ─────────────────────────── */
+
+/* 抽屉 / 弹窗 / 向导：真正的玻璃拟态（18px 模糊 + 半透明白 + 1px 顶部内高光） */
+.drawer,
+dialog.modal,
+.wizard__card {
+  background-color: var(--glass-panel);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  backdrop-filter: blur(18px) saturate(1.3);
+  box-shadow: var(--sh-xl), var(--glass-ring), var(--glass-edge);
+}
+
+/* 大浮层用最大圆角，形成 12 / 16 / 20 / 28 的层级节奏 */
+dialog.modal,
+.wizard__card {
+  border-radius: var(--r-2xl);
+}
+
+/* 抽屉底部操作条融入玻璃，不再是一块实色贴片 */
+.drawer__foot {
+  background-color: transparent;
+}
+
+/* 输入容器：玻璃 + 顶部高光，聚焦时叠一层柔光 */
+.composer__form {
+  box-shadow: var(--sh-sm), var(--glass-edge);
+}
+
+/* 记忆卡片：hover 平滑加深（升一级阴影，不跳变） */
+.mem-item {
+  box-shadow: var(--sh-sm);
+}
+
+.mem-item:hover {
+  box-shadow: var(--sh-md-hover);
+}
+
+/* 会话项 / 卡片类 hover：统一用下一级阴影 */
+.session-item:hover {
+  box-shadow: var(--sh-sm-hover);
+}
+
+/* ── 18.6 排版精修：字号阶梯、字距、行高、数字 ─────────────────────────── */
+
+/* 中文正文行高 1.75；数字等宽，数值变化不抖动 */
+body {
+  line-height: 1.75;
+}
+
+/* 中文标题保持一点点正字距（负字距对中文会显挤） */
+.wizard__h,
+.drawer__head h2,
+.modal__head h2,
+.topbar__title h1 {
+  letter-spacing: 0.01em;
+}
+
+/* 全大写 / 小标签：正字距拉开 */
+.sessions__label,
+.field__label,
+.mem-tag,
+.pill {
+  letter-spacing: 0.04em;
+}
+
+/* 数值类元素：tabular-nums 明确继承来源，避免子元素覆盖 */
+.msg__meta,
+.pill,
+.mem-head,
+.field__value,
+.dbg {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 正文段落保持 1.75，长文更松弛 */
+.msg__content,
+.msg__bubble,
+.wizard__p,
+.modal__body p,
+.notice li,
+.steps__main p,
+.mem-item__text,
+.note {
+  line-height: 1.75;
+}
+
+/* ── 18.7 交互三态与双层焦点环 ─────────────────────────────────────────── */
+
+/* 补齐（不覆盖已有更精细的样式）：统一过渡时长与曲线，hover 不会跳变 */
+:where(.btn, .icon-btn, .ghost-btn, .pill, .suggestion, .link-btn, .scroll-bottom, .msg__action, .demo-entry, .recall__chip, .titlebar__btn) {
+  transition-property: transform, box-shadow, background-color, border-color, color, opacity;
+  transition-duration: var(--dur);
+  transition-timing-function: var(--ease);
+}
+
+/* 补齐 active 下沉 1px（已有规则的按钮保持原样） */
+:where(.link-btn, .pill, .demo-entry, .titlebar__btn):active {
+  transform: translateY(1px);
+}
+
+/* 开关 hover 时描边加深 */
+.switch:hover .switch__track {
+  border-color: var(--border-strong);
+}
+
+/* 双层焦点环：内层与背景同色的 2px 间隙 + 外层极淡主色，鼠标点击不出现 */
+.btn:focus-visible,
+.icon-btn:focus-visible,
+.ghost-btn:focus-visible,
+.pill:focus-visible,
+.suggestion:focus-visible,
+.link-btn:focus-visible,
+.demo-entry:focus-visible,
+.scroll-bottom:focus-visible,
+.titlebar__btn:focus-visible,
+.msg__action:focus-visible,
+.recall__chip:focus-visible,
+.session-item__main:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--focus);
+}
+
+/* 主按钮保留自身光晕 */
+.btn--primary:focus-visible {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--focus), 0 8px 20px var(--glow-brand);
+}
+
+/* 输入区聚焦：描边渐变为 brand、外发光极淡、发送键轻微放大 */
+.composer__form {
+  position: relative;
+}
+
+.composer__form::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  padding: 1px;
+  border-radius: inherit;
+  background: var(--grad-brand);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.composer__form:focus-within {
+  border-color: transparent;
+  box-shadow: 0 0 0 4px var(--focus-halo), var(--sh-md), var(--glass-edge);
+}
+
+.composer__form:focus-within::after {
+  opacity: 1;
+}
+
+.composer__form:focus-within .send-btn:not(:disabled) {
+  transform: scale(1.05);
+  box-shadow: 0 10px 22px -6px var(--glow-brand);
+}
+
+/* ── 18.8 消息操作按钮：hover 才浮现 ───────────────────────────────────── */
+
+.msg__action {
+  opacity: 0;
+  transform: translate3d(0, 2px, 0);
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease-out),
+    background-color var(--dur) var(--ease), color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+
+.msg:hover .msg__action,
+.msg:focus-within .msg__action,
+.msg__action:focus-visible,
+.msg__action.is-done {
+  opacity: 1;
+  transform: none;
+}
+
+/* 触屏没有 hover：操作按钮常驻，避免无法发现 */
+@media (hover: none) {
+  .msg__action {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ── 18.9 选区与滚动条 ─────────────────────────────────────────────────── */
+
+::selection {
+  background: var(--selection);
+  color: var(--text);
+}
+
+html[data-theme="dark"] ::selection {
+  color: #ffffff;
+}
+
+/* 更细的滚动条：默认透明，hover 容器才显色 */
+.chat::-webkit-scrollbar,
+.session-list::-webkit-scrollbar,
+.drawer__body::-webkit-scrollbar,
+.wizard__body::-webkit-scrollbar,
+.modal__body::-webkit-scrollbar,
+#message::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.chat:hover::-webkit-scrollbar-thumb,
+.session-list:hover::-webkit-scrollbar-thumb,
+.drawer__body:hover::-webkit-scrollbar-thumb,
+.wizard__body:hover::-webkit-scrollbar-thumb,
+.modal__body:hover::-webkit-scrollbar-thumb,
+#message:hover::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+}
+
+.chat::-webkit-scrollbar-thumb:hover,
+.session-list::-webkit-scrollbar-thumb:hover,
+.drawer__body::-webkit-scrollbar-thumb:hover,
+.wizard__body::-webkit-scrollbar-thumb:hover,
+.modal__body::-webkit-scrollbar-thumb:hover,
+#message::-webkit-scrollbar-thumb:hover {
+  background-color: var(--brand-line);
+}
+
+/* 矮窗口下英雄区改为顶部对齐，避免内容超高时首屏被裁切 */
+@media (max-height: 700px) {
+  .welcome {
+    place-items: start center;
+  }
+}
+
+/* ── 18.10 移动端减负（≤860px）：关噪点、精简光晕与模糊 ─────────────────- */
+
+@media (max-width: 860px) {
+  /* 噪点全屏混合层在低端设备上最贵，移动端直接关闭 */
+  body::after {
+    display: none;
+  }
+
+  /* 只保留一处最淡的光晕，并停止漂移 */
+  body::before {
+    background-image: radial-gradient(closest-side, var(--glow-veil-a), transparent 76%);
+    background-size: 132% 62%;
+    background-position: 50% -8%;
+    animation: none;
+  }
+
+  .bg-aurora {
+    background-image: radial-gradient(620px 380px at 50% -8%, var(--glow-veil-b), transparent 68%);
+    animation: none;
+  }
+
+  /* 玻璃模糊半径减半，保住滚动性能 */
+  .drawer,
+  dialog.modal,
+  .wizard__card,
+  .sidebar,
+  .topbar,
+  .composer,
+  .recall,
+  .composer__form {
+    -webkit-backdrop-filter: blur(12px) saturate(1.2);
+    backdrop-filter: blur(12px) saturate(1.2);
+  }
+
+  /* 徽标与间距略微收紧，保证 390px 宽也不会拥挤 */
+  .hero__mark {
+    width: 72px;
+    height: 72px;
+  }
+
+  .hero__core {
+    border-radius: 22px;
+    font-size: 29px;
+  }
+
+  .hero__ring {
+    inset: -9px;
+  }
+
+  .welcome__inner {
+    gap: var(--sp-3);
+  }
+
+  .recall {
+    padding: var(--sp-3) var(--sp-4) var(--sp-3) calc(var(--sp-4) + 2px);
+  }
+}
+
+/* ── 18.11 无障碍：完整尊重「减少动效」偏好 ────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  /* 光晕漂移、旋转、呼吸、stagger 全部停止 */
+  body::before,
+  .bg-aurora,
+  .hero__mark,
+  .hero__mark::before,
+  .hero__ring,
+  .hero__title,
+  .hero__sub,
+  .recall,
+  .recall__chip,
+  .recall__list > li,
+  .starters__label,
+  .suggestions .suggestion,
+  .demo-entry,
+  .demo-entry::before,
+  .demo-entry .icon,
+  .welcome__notice {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* 静态层回到中性状态：内容一律可见、不位移 */
+  body::before,
+  .bg-aurora {
+    transform: none !important;
+  }
+
+  .hero__mark,
+  .hero__title,
+  .hero__sub,
+  .recall,
+  .recall__chip,
+  .starters__label,
+  .suggestions .suggestion,
+  .demo-entry,
+  .welcome__notice {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .hero__ring {
+    opacity: 0.55;
+    scale: 1 !important;
+  }
+
+  /* 装饰性流动光带不再启动，改用静态渐变细边提示可点击 */
+  .demo-entry::before {
+    opacity: 0 !important;
+  }
+
+  .demo-entry:hover::after,
+  .demo-entry:focus-visible::after {
+    opacity: 0.85;
+  }
+
+  /* 消息操作按钮：无 hover 动画时保持可见，避免「找不到按钮」 */
+  .msg__action {
+    opacity: 1;
+    transform: none;
+  }
+}
+

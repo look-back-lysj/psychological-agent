@@ -1,7 +1,9 @@
 /**
  * 心屿 · 管理接口
- * - /api/config  本地模型配置（DeepSeek Key、模型、温度）读写与连通性自检
- * - /api/memory  长期记忆的查看 / 新增 / 编辑 / 删除 / 清空 / 开关
+ * - /api/config    本地模型配置（DeepSeek Key、模型、温度）读写与连通性自检
+ * - /api/memory    长期记忆的查看 / 新增 / 编辑 / 删除 / 清空 / 开关
+ * - /api/comeback  「回来」上下文（情感连续性；不调用模型）
+ * - /api/demo      免 Key 演示模式开关（GET 查询 / POST 设置）
  *
  * 安全：API Key 只落本地 data/config.json，对外一律脱敏；绝不写日志。
  */
@@ -10,6 +12,8 @@ const express = require('express');
 const config = require('./config');
 const memory = require('./memory');
 const { testConnection } = require('./llm');
+const { getComeback } = require('./comeback');
+const { isDemoEnabled, setDemoEnabled } = require('./demo');
 
 // ── 配置 ────────────────────────────────────────────────────────
 const configRouter = express.Router();
@@ -99,4 +103,42 @@ memoryRouter.delete('/', (req, res) => {
   res.json({ ok: true, data: { cleared: true } });
 });
 
-module.exports = { configRouter, memoryRouter };
+// ── 「回来」：情感连续性上下文（零模型调用，失败也要有兜底结构）──
+const comebackRouter = express.Router();
+
+comebackRouter.get('/', (req, res) => {
+  let data;
+  try {
+    data = getComeback();
+  } catch (e) {
+    // 极端情况下也不让接口 500：返回最小可用结构
+    data = {
+      firstVisit: true,
+      lastSeenAt: null,
+      hoursSince: null,
+      timeOfDay: 'afternoon',
+      greeting: '我是心屿。你可以先坐一会儿，不用急着说什么。',
+      memoryHighlights: [],
+      suggestions: ['今天状态还行', '想说点别的', '不知道从哪儿开始'],
+      visitCount: 1
+    };
+  }
+  // demoAvailable 让前端知道可以引导没有 Key 的用户试演示模式
+  res.json({ ok: true, data: Object.assign({}, data, { demoAvailable: true }) });
+});
+
+// ── 演示模式开关（状态与「回来」共用 data/state.json）────────────
+const demoRouter = express.Router();
+
+demoRouter.get('/', (req, res) => {
+  res.json({ ok: true, data: { enabled: isDemoEnabled() } });
+});
+
+demoRouter.post('/', (req, res) => {
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  // 只接受显式 true 才开启，其它情况一律视为关闭
+  const enabled = setDemoEnabled(body.enabled === true);
+  res.json({ ok: true, data: { enabled } });
+});
+
+module.exports = { configRouter, memoryRouter, comebackRouter, demoRouter };

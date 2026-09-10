@@ -20,7 +20,7 @@ if (!fs.existsSync(publicDir)) {
 
 // 静态 require，便于 pkg 在打包时自动收集依赖
 const chatRoute = require('./src/chat');
-const { configRouter, memoryRouter } = require('./src/routes');
+const { configRouter, memoryRouter, comebackRouter, demoRouter } = require('./src/routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -30,6 +30,8 @@ app.use(express.static(publicDir));
 app.use('/api/chat', chatRoute);
 app.use('/api/config', configRouter);
 app.use('/api/memory', memoryRouter);
+app.use('/api/comeback', comebackRouter);
+app.use('/api/demo', demoRouter);
 
 app.get('/api/health', (req, res) => {
   let cfg = { model: '', configured: false };

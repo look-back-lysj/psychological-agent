@@ -103,6 +103,27 @@
   const CONFIG_SAVED_TOAST = '设置已保存';
   const MEMORY_SAVED_TOAST = '已添加一条记忆';
 
+  // 情感连续性（GET /api/comeback）与免 Key 演示模式（GET/POST /api/demo）
+  const COMEBACK_TIMEOUT_MS = 3000;
+  const COMEBACK_CACHE_MS = 5000;
+  const DEMO_TIMEOUT_MS = 3000;
+  const DEFAULT_HERO_TITLE = '你好，我在这里';
+  const DEFAULT_HERO_SUB = '不用急着说什么。想聊的时候，我在。';
+  const DEFAULT_STARTERS_LABEL = '可以这样开始';
+  const DEMO_ENTRY_OFF_TEXT = '没有 API Key？先用演示模式感受一下';
+  const DEMO_ENTRY_ON_TEXT = '演示模式已开启（不会发送到模型）';
+  const DEMO_ON_TOAST = '已进入演示模式';
+  const DEMO_OFF_TOAST = '已退出演示模式';
+  const DEMO_FAIL_TOAST = '演示模式暂时不可用，稍后再试';
+
+  // 接口不可用 / suggestions 为空时回落的 4 条静态建议（保持 button.suggestion + data-prompt 契约）
+  const STATIC_SUGGESTIONS = [
+    { prompt: '最近考试压力很大，晚上一直失眠', label: '最近考试压力很大，晚上一直失眠' },
+    { prompt: '我也不知道为什么，最近就是乱糟糟的', label: '说不清原因，就是乱糟糟的' },
+    { prompt: '算了，没什么，不想说了', label: '算了，没什么' },
+    { prompt: '我该怎么调整自己的状态？', label: '想问问怎么调整状态' },
+  ];
+
   const SCROLL_THRESHOLD = 96; // px：距底部多近算“在底部附近”
   const DOTS_HTML = '<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>';
 
@@ -145,6 +166,13 @@
     messages: $('messages'),
     welcome: $('welcome'),
     suggestions: $('suggestions'),
+    heroTitle: $('hero-title'),
+    heroSub: $('hero-sub'),
+    recall: $('recall'),
+    recallList: $('recall-list'),
+    startersLabel: $('starters-label'),
+    demoEntry: $('demo-entry'),
+    demoEntryText: $('demo-entry-text'),
     scrollBottom: $('scroll-bottom'),
     form: $('chat-form'),
     input: $('message'),
@@ -251,6 +279,14 @@
   let themeAnimTimer = 0;      // 主题平滑过渡的收尾计时器
   let scrollBtnVisible = false;// 「回到最新」当前是否可见（避免滚动时反复改 DOM）
   let lastRippleAt = 0;        // 发送键最近一次涟漪反馈的时间戳
+
+  // 情感连续性 / 演示模式
+  let comebackCache = null;    // 最近一次成功的 /api/comeback 数据
+  let comebackAt = 0;          // 上面数据的获取时间，用于短间隔缓存
+  let comebackInFlight = null; // 进行中的 comeback 请求（避免并发重复）
+  let demoCapable = false;     // /api/demo 是否可用（接口存在或 comeback 声明可用）
+  let demoEnabled = false;     // 演示模式当前是否开启
+  let demoBusy = false;        // 演示模式切换 / 自动关闭进行中
 
   /* ============================================================
    * 四、通用工具
@@ -1438,6 +1474,7 @@
           action: String(data.memory.action),
           item: data.memory.item == null ? '' : String(data.memory.item),
         };
+        applyMemoryFeedback(assistant.memory); // 即时同步「我记得」列表
       }
       assistant.blocked = !!data.blocked;
       assistant.done = true;
@@ -1533,6 +1570,7 @@
         action: String(data.memory.action),
         item: data.memory.item == null ? '' : String(data.memory.item),
       };
+      applyMemoryFeedback(assistant.memory); // 即时同步「我记得」列表
     }
     assistant.blocked = !!data.blocked;
     assistant.error = false;
@@ -1790,6 +1828,7 @@
   }
 
   function startNewChat() {
+    loadComeback(false); // 每次开新对话都重拉一次（短间隔走缓存，避免频繁请求）
     const current = getSession(activeId);
     if (current && current.messages.length === 0) {
       renderAll();
@@ -1942,11 +1981,12 @@
    * ============================================================ */
 
   function setHealth(state, statusText, modelText) {
+    // 演示模式开启时，状态胶囊固定显示「演示模式」（复用 ok 状态，不改样式假设）
     if (el.statusPill) {
-      el.statusPill.dataset.state = state;
-      el.statusPill.textContent = statusText;
+      el.statusPill.dataset.state = demoEnabled ? 'ok' : state;
+      el.statusPill.textContent = demoEnabled ? '演示模式' : statusText;
     }
-    if (el.modelDot) el.modelDot.dataset.state = state;
+    if (el.modelDot) el.modelDot.dataset.state = demoEnabled ? 'ok' : state;
     if (el.modelPill) el.modelPill.textContent = modelText;
   }
 
@@ -1964,22 +2004,301 @@
       if (configured) {
         setHealth('ok', '已连接', '模型：' + (model || '已配置'));
         setHidden(el.modelWarn, true);
+        maybeAutoDisableDemo(); // 用户后来补了 Key：自动退出演示模式
       } else {
         setHealth('error', '模型未配置', '模型：未配置');
-        setHidden(el.modelWarn, false);
-        // 首次进入且用户没有主动跳过时，引导配置
-        if (!isSetupDismissed() && !isWizardOpen() && !activeDrawer) openWizard(1);
+        setHidden(el.modelWarn, !!demoEnabled);
+        // 首次进入且用户没有主动跳过时，引导配置；演示模式开启时不再强制打断
+        if (!isSetupDismissed() && !isWizardOpen() && !activeDrawer && !demoEnabled) openWizard(1);
       }
+      syncDemoUI();
       return data;
     } catch (e) {
       healthConfigured = null;
       setHealth('error', '连接失败', '模型：无法连接');
+      syncDemoUI();
       return null;
     }
   }
 
   async function checkHealth() {
     await refreshHealth(false);
+  }
+
+  /* ============================================================
+   * 十五·补、情感连续性（comeback）与免 Key 演示模式
+   * ------------------------------------------------------------
+   * 这两块都是「锦上添花」：接口缺失 / 超时 / 返回异常时一律静默降级到
+   * 静态欢迎文案，绝不抛错、不白屏，也不影响聊天主流程。
+   * ============================================================ */
+
+  const FETCH_TIMEOUT_MS = 3000;
+
+  // 带超时的 JSON 请求：网络失败 / 超时 / 非 2xx / ok !== true 一律返回 null
+  async function fetchDataWithTimeout(path, options, timeoutMs) {
+    const opts = options || {};
+    const init = { method: opts.method || 'GET', headers: {}, cache: 'no-store' };
+    if (opts.body !== undefined) {
+      init.headers['Content-Type'] = 'application/json';
+      init.body = JSON.stringify(opts.body);
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(function () {
+      try { controller.abort(); } catch (e) { /* 忽略 */ }
+    }, timeoutMs || FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetch(path, Object.assign({}, init, { signal: controller.signal }));
+      let json = null;
+      try { json = await res.json(); } catch (e) { json = null; }
+      if (!res.ok || !json || json.ok !== true) return null;
+      return json.data === undefined ? json : json.data;
+    } catch (e) {
+      return null;
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
+
+  function clipText(value, max) {
+    const text = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    const chars = Array.from(text);
+    return chars.length > max ? chars.slice(0, max).join('') + '…' : text;
+  }
+
+  // 按中英文句末标点断句（问候语最多 1—2 句：第一句进标题，第二句进副标题）
+  function splitSentences(text) {
+    const clean = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+    if (!clean) return [];
+    const matched = clean.match(/[^。！？!?…]+[。！？!?…]*/g);
+    return (matched || [clean]).map(function (s) { return s.trim(); }).filter(Boolean);
+  }
+
+  // health 与 config 谁先回来都行：都拿不到时返回 null（未知）
+  function isConfiguredState() {
+    if (healthConfigured === true || healthConfigured === false) return healthConfigured;
+    if (configCache && typeof configCache.configured === 'boolean') return configCache.configured;
+    return null;
+  }
+
+  function normalizeSuggestion(item) {
+    if (typeof item === 'string') {
+      const text = item.trim();
+      return text ? { label: text, prompt: text } : null;
+    }
+    if (item && typeof item === 'object') {
+      const prompt = String(item.prompt || item.text || item.question || item.content || '').trim();
+      if (!prompt) return null;
+      const label = String(item.label || item.title || '').trim() || prompt;
+      return { label: label, prompt: prompt };
+    }
+    return null;
+  }
+
+  // 用建议替换 #suggestions 内容；为空 / 非法时回落到内置 4 条静态建议
+  function renderSuggestions(items) {
+    if (!el.suggestions) return;
+    const list = [];
+    (Array.isArray(items) ? items : []).forEach(function (item) {
+      const norm = normalizeSuggestion(item);
+      if (norm && list.length < 4) list.push(norm);
+    });
+    const finalList = list.length ? list : STATIC_SUGGESTIONS.slice();
+    el.suggestions.textContent = '';
+    finalList.forEach(function (item) {
+      const btn = makeEl('button', 'suggestion', clipText(item.label, 60) || item.prompt);
+      btn.type = 'button';
+      btn.dataset.prompt = item.prompt; // 现有发送逻辑依赖 data-prompt，契约不可改
+      if (item.label !== item.prompt) btn.setAttribute('aria-label', item.prompt);
+      el.suggestions.appendChild(btn);
+    });
+  }
+
+  function recallText(value) {
+    if (typeof value === 'string') return clipText(value, 16);
+    if (value && typeof value === 'object') {
+      return clipText(value.text || value.content || value.label, 16);
+    }
+    return '';
+  }
+
+  // 渲染 0—3 条「我记得」；为空时保持 #recall 隐藏
+  function renderRecallChips(items) {
+    if (!el.recallList || !el.recall) return;
+    const list = [];
+    (Array.isArray(items) ? items : []).forEach(function (item) {
+      const text = recallText(item);
+      if (text && list.length < 3) list.push(text);
+    });
+    el.recallList.textContent = '';
+    list.forEach(function (text) {
+      el.recallList.appendChild(makeEl('li', 'recall__chip', text));
+    });
+    setHidden(el.recall, list.length === 0);
+  }
+
+  // 欢迎区是否当前可见（会话为空时 updateWelcome 才会显示它）
+  function isWelcomeVisible() {
+    return !!(el.welcome && !el.welcome.hidden);
+  }
+
+  // SSE done / 非流式回包里的 memory 反馈：即时同步「我记得」列表
+  function applyMemoryFeedback(mem) {
+    if (!mem || !mem.action || !el.recallList) return;
+    if (mem.action === 'remember') {
+      if (!isWelcomeVisible()) return; // 欢迎区不可见时跳过，等下次 comeback 重建
+      const text = recallText(mem.item);
+      if (!text) return;
+      el.recallList.insertBefore(makeEl('li', 'recall__chip', text), el.recallList.firstChild);
+      while (el.recallList.children.length > 3) el.recallList.removeChild(el.recallList.lastChild);
+      setHidden(el.recall, false);
+      return;
+    }
+    if (mem.action === 'forget') {
+      const key = String(mem.item == null ? '' : mem.item).trim();
+      if (!key) return;
+      const chips = el.recallList.querySelectorAll('.recall__chip');
+      for (let i = chips.length - 1; i >= 0; i -= 1) {
+        if (chips[i].textContent.indexOf(key) !== -1) chips[i].parentNode.removeChild(chips[i]);
+      }
+      if (!el.recallList.children.length) setHidden(el.recall, true);
+    }
+  }
+
+  // 把一次成功的 comeback 数据写进欢迎区；任何字段缺失都单独兜底
+  function applyComeback(data) {
+    if (!data || typeof data !== 'object') return;
+    const sentences = splitSentences(data.greeting);
+    if (el.heroTitle) {
+      if (sentences.length) el.heroTitle.textContent = clipText(sentences[0], 48);
+      else if (!el.heroTitle.textContent) el.heroTitle.textContent = DEFAULT_HERO_TITLE;
+    }
+    if (el.heroSub) {
+      if (sentences.length > 1) el.heroSub.textContent = clipText(sentences[1], 80);
+      else if (!el.heroSub.textContent) el.heroSub.textContent = DEFAULT_HERO_SUB;
+    }
+    renderRecallChips(data.memoryHighlights);
+    renderSuggestions(data.suggestions);
+    if (el.startersLabel) {
+      if (data.timeOfDay === 'lateNight') el.startersLabel.textContent = '也可以这样开始';
+      else if (data.timeOfDay === 'evening') el.startersLabel.textContent = '晚上也可以这样开始';
+      else el.startersLabel.textContent = DEFAULT_STARTERS_LABEL;
+    }
+    if (data.demoAvailable === true) {
+      demoCapable = true;
+      syncDemoUI();
+    }
+  }
+
+  // force=true 时忽略缓存（演示模式切换后需要新问候）
+  async function loadComeback(force) {
+    if (!force && comebackCache && comebackAt && (now() - comebackAt) < COMEBACK_CACHE_MS) {
+      applyComeback(comebackCache); // 短间隔内复用缓存，避免频繁请求
+      return comebackCache;
+    }
+    if (comebackInFlight) return comebackInFlight;
+    comebackInFlight = (async function () {
+      const data = await fetchDataWithTimeout('/api/comeback', { method: 'GET' }, COMEBACK_TIMEOUT_MS);
+      if (data && typeof data === 'object') {
+        comebackCache = data;
+        comebackAt = now();
+        applyComeback(data);
+      }
+      return data || null;
+    })();
+    try {
+      return await comebackInFlight;
+    } finally {
+      comebackInFlight = null;
+    }
+  }
+
+  // ── 演示模式 ────────────────────────────────────────────────
+
+  function applyDemoPill() {
+    if (el.statusPill && demoEnabled) {
+      el.statusPill.dataset.state = 'ok';
+      el.statusPill.textContent = '演示模式';
+    }
+  }
+
+  function syncDemoUI() {
+    if (el.demoEntryText) {
+      el.demoEntryText.textContent = demoEnabled ? DEMO_ENTRY_ON_TEXT : DEMO_ENTRY_OFF_TEXT;
+    }
+    const configured = isConfiguredState();
+    // 只在「确认未配置 Key」或「演示模式已开启」时露出入口
+    const visible = demoCapable && (configured === false || demoEnabled);
+    setHidden(el.demoEntry, !visible);
+    if (demoEnabled) {
+      setHidden(el.modelWarn, true);
+      applyDemoPill();
+    }
+    return visible;
+  }
+
+  async function loadDemo() {
+    const data = await fetchDataWithTimeout('/api/demo', { method: 'GET' }, DEMO_TIMEOUT_MS);
+    if (data && typeof data === 'object') {
+      demoCapable = true;
+      demoEnabled = data.enabled === true;
+    }
+    syncDemoUI();
+    return data || null;
+  }
+
+  async function toggleDemoFromEntry() {
+    if (demoBusy || !el.demoEntry) return;
+    demoBusy = true;
+    el.demoEntry.disabled = true;
+    const next = !demoEnabled;
+    try {
+      const data = await fetchDataWithTimeout('/api/demo', { method: 'POST', body: { enabled: next } }, DEMO_TIMEOUT_MS);
+      if (!data || typeof data !== 'object') { toast(DEMO_FAIL_TOAST, 'error'); return; }
+      demoCapable = true;
+      demoEnabled = data.enabled === true;
+      if (demoEnabled) {
+        if (isWizardOpen()) closeWizard(true); // 关闭向导，让用户直接开始
+        toast(DEMO_ON_TOAST, 'success');
+      } else {
+        toast(DEMO_OFF_TOAST);
+      }
+      syncDemoUI();
+      await loadComeback(true);   // 重新拉「回来」问候与建议
+      if (!demoEnabled) checkHealth(); // 退出后刷新连接状态
+      focusInput();
+    } catch (e) {
+      toast(DEMO_FAIL_TOAST, 'error');
+    } finally {
+      demoBusy = false;
+      if (el.demoEntry) el.demoEntry.disabled = false;
+    }
+  }
+
+  // 关闭演示模式后，用已知的 health 状态恢复状态胶囊（避免残留「演示模式」）
+  function reapplyHealthStatus() {
+    if (healthConfigured === true) {
+      setHealth('ok', '已连接', (el.modelPill && el.modelPill.textContent) || '模型：已配置');
+    } else if (healthConfigured === false) {
+      setHealth('error', '模型未配置', '模型：未配置');
+      setHidden(el.modelWarn, false);
+      if (!isSetupDismissed() && !isWizardOpen() && !activeDrawer) openWizard(1);
+    } else {
+      checkHealth(); // 状态未知时重新探测一次
+    }
+  }
+
+  // 用户后来填了 Key 并保存成功：自动关闭演示模式（失败也以本地状态为准，静默处理）
+  async function maybeAutoDisableDemo() {
+    if (!demoEnabled || demoBusy) return;
+    demoBusy = true;
+    try {
+      await fetchDataWithTimeout('/api/demo', { method: 'POST', body: { enabled: false } }, DEMO_TIMEOUT_MS);
+    } catch (e) { /* 忽略：本地状态照样关闭 */ }
+    demoEnabled = false;
+    demoBusy = false;
+    syncDemoUI();
+    reapplyHealthStatus();
   }
 
   /* ============================================================
@@ -2007,6 +2326,9 @@
 
     // 新对话
     if (el.newChat) el.newChat.addEventListener('click', startNewChat);
+
+    // 免 Key 演示模式入口
+    if (el.demoEntry) el.demoEntry.addEventListener('click', toggleDemoFromEntry);
 
     // 主题
     if (el.themeToggle) el.themeToggle.addEventListener('click', toggleTheme);
@@ -2366,6 +2688,7 @@
         healthConfigured = true;
         setHealth('ok', '已连接', '模型：' + (result.model || model));
         setHidden(el.modelWarn, true);
+        maybeAutoDisableDemo(); // 补上 Key 后自动退出演示模式
         if (el.wizardKey) el.wizardKey.value = '';
         window.setTimeout(function () {
           closeWizard(false);
@@ -2438,6 +2761,7 @@
       applyConfigToForm(configCache || {});
       if (!silent) toastError(e, '读取设置失败，先显示上一次的配置');
     }
+    syncDemoUI(); // configured 状态可能变化，同步演示模式入口
   }
 
   function collectSettingsPatch() {
@@ -2478,6 +2802,7 @@
       setResult(el.settingsResult, 'ok', '设置已保存。');
       if (!silent) toast(CONFIG_SAVED_TOAST, 'success');
       await refreshHealth();
+      maybeAutoDisableDemo(); // 兜底：即使健康检查失败也自动退出演示模式
       return true;
     } catch (e) {
       setResult(el.settingsResult, 'error', (e && e.userMessage) || '保存失败，请稍后再试。');
@@ -2533,6 +2858,7 @@
       setHealth('error', '模型未配置', '模型：未配置');
       setHidden(el.modelWarn, false);
       setResult(el.settingsResult, '', '');
+      syncDemoUI(); // 清除 Key 后演示模式入口重新露出
       toast('已清除 API Key', 'success');
     } catch (e) {
       toastError(e, '清除失败，请稍后再试');
@@ -2896,12 +3222,16 @@
     closeDrawer();
     stickBottom = true;
     renderAll();
+    renderSuggestions(STATIC_SUGGESTIONS); // 先给静态兜底，comeback 回来后替换
+    syncDemoUI();
     autosize();
     syncComposer();
     updateScrollButton();
 
     loadConfig(true);
     checkHealth();
+    loadComeback(); // 情感连续性：只拉一次，失败静默保持静态欢迎文案
+    loadDemo();     // 免 Key 演示模式：接口可用且未配置 Key 时露出入口
   }
 
   if (document.readyState === 'loading') {

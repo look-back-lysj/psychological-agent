@@ -49,6 +49,7 @@
     <symbol id="i-retry" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7" /><path d="M20 4v4h-4" /></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M7 7l1 12.5h8L17 7" /></symbol>
     <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6" /></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9z" /></symbol>
     <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6" /></symbol>
     <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1" /><path d="M12 2.6v2.3M12 19.1v2.3M4.4 7.3l2 1.2M17.6 15.5l2 1.2M4.4 16.7l2-1.2M17.6 8.5l2-1.2" /></symbol>
     <symbol id="i-memory" viewBox="0 0 24 24"><path d="M12 4.6c-2.6-1.5-5.6-1.6-8-.6v13c2.4-1 5.4-.9 8 .6 2.6-1.5 5.6-1.6 8-.6v-13c-2.4-1-5.4-.9-8 .6z" /><path d="M12 4.6v13" /></symbol>
@@ -128,15 +129,30 @@
 
         <div class="welcome" id="welcome">
           <div class="welcome__inner">
-            <div class="welcome__mark" aria-hidden="true">屿</div>
-            <h2 class="welcome__title">你好，我在这里</h2>
-            <p class="welcome__desc">我是一个非诊疗的情绪陪伴助手。<br />可以聊聊最近的压力、心情，或者只是想找个人说说话。</p>
-            <div class="suggestions" id="suggestions">
-              <button class="suggestion" type="button" data-prompt="最近考试压力很大，晚上一直失眠">最近考试压力很大，晚上一直失眠</button>
-              <button class="suggestion" type="button" data-prompt="我也不知道为什么，最近就是乱糟糟的">说不清原因，就是乱糟糟的</button>
-              <button class="suggestion" type="button" data-prompt="算了，没什么，不想说了">算了，没什么</button>
-              <button class="suggestion" type="button" data-prompt="我该怎么调整自己的状态？">想问问怎么调整状态</button>
-            </div>
+            <section class="hero" id="hero">
+              <div class="hero__mark" aria-hidden="true">
+                <span class="hero__ring"></span>
+                <span class="hero__core">屿</span>
+              </div>
+              <h1 class="hero__title" id="hero-title">你好，我在这里</h1>
+              <p class="hero__sub" id="hero-sub">不用急着说什么。想聊的时候，我在。</p>
+            </section>
+
+            <section class="recall" id="recall" aria-label="我记得的事" hidden>
+              <p class="recall__label">我记得</p>
+              <ul class="recall__list" id="recall-list"></ul>
+            </section>
+
+            <section class="starters" aria-label="可以这样开始">
+              <p class="starters__label" id="starters-label">可以这样开始</p>
+              <div class="suggestions" id="suggestions"></div>
+            </section>
+
+            <button class="demo-entry" id="demo-entry" type="button" hidden>
+              <svg class="icon" aria-hidden="true"><use href="#i-spark" /></svg>
+              <span id="demo-entry-text">没有 API Key？先用演示模式感受一下</span>
+            </button>
+
             <p class="welcome__notice">我不是心理咨询师，也不能在危机时提供专业支持。如有紧急情况，请立即联系身边可信任的人、学校心理中心或当地紧急服务。</p>
           </div>
         </div>

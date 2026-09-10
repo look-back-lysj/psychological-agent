@@ -3,6 +3,9 @@
  *
  * 流程：输入 → 前置安全分级(L0—L3) → 策略路由(S0—S6) → 组装提示词(人设+策略+安全+记忆)
  *      → 调用模型 → 后置输出检查 → 返回；全过程写脱敏日志、异步抽取长期记忆。
+ *
+ * 免 Key 演示模式（src/demo.js）：已开启演示且没有 API Key 时，在调用模型之前
+ * 改走本地脚本回复，返回体带 demo: true 诚实标注；有 Key 时永远优先真实模型。
  */
 
 const express = require('express');
@@ -21,6 +24,7 @@ const memory = require('./memory');
 const { AGENT_VERSION, appraise, resolveStrategy, localScreen, review } = require('./agents');
 const { describeInnerState, updateInnerState, replyShape } = require('./innerstate');
 const { logCall } = require('./logger');
+const { isDemoEnabled, demoReply } = require('./demo');
 
 const router = express.Router();
 const FAKE_SESSION_PREFIX = 's_';
@@ -28,6 +32,7 @@ const NL = String.fromCharCode(10);
 
 const ERROR_FALLBACK = '我这边刚才没有接上，但你的话我已经听到了。可以点「重试」再来一次；如果想继续，也可以先慢慢说说现在最想聊的那件事。';
 const CRISIS_FALLBACK = '我很在意你现在的状态。请先远离身边可能伤害到自己的东西，然后联系一个此刻能陪着你的人；如果情况紧急，请直接联系当地紧急服务。';
+const DEMO_FALLBACK = '嗯，我在听。你可以慢慢说，也可以先停在这里。';
 
 const EXTRACT_EVERY_TURNS = 3;   // 每 3 轮批量抽取一次长期记忆（省额度）
 const extracting = new Set();    // 正在抽取的会话，避免并发
@@ -104,16 +109,52 @@ function buildMessages(history) {
 }
 
 /**
+ * 演示模式是否真正生效：用户已开启演示 且 当前没有可用 API Key。
+ * 有 Key 时永远优先真实模型；任何读取异常都按「不生效」处理，不影响主链路。
+ */
+function isDemoActive() {
+  try {
+    if (!isDemoEnabled()) return false;
+    const cfg = getConfig();
+    return !(cfg && cfg.apiKey);
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * 生成一次回复（非流式路径 / 流式路径共用）。
  */
 async function generateReply(ctx, { stream, onDelta, signal }) {
   const { message, sessionId, inputSafety, decision } = ctx;
   const riskLevel = inputSafety.riskLevel;
 
-  // 危机场景：固定话术，不交给模型自由生成
+  // 危机场景：固定话术，不交给模型自由生成（也不走演示话术）
   if (riskLevel === 'L3') {
     const reply = (inputSafety.meta && inputSafety.meta.reply) || CRISIS_FALLBACK;
     return { reply, usedModel: false, usage: null, blocked: false, agent: { version: AGENT_VERSION, mode: 'crisis_fixed' } };
+  }
+
+  // 免 Key 演示模式：在「观」等任何模型调用之前拦截，返回本地脚本回复。
+  // 仍走完整的输出后置检查；失败一律静默，绝不阻塞回复。
+  if (isDemoActive()) {
+    let reply = '';
+    try {
+      reply = demoReply({ message, riskLevel, strategyKey: decision.key, plan: null });
+    } catch (e) {
+      reply = '';
+    }
+    if (!reply) reply = DEMO_FALLBACK;
+    const demoCheck = checkOutputSafety(reply);
+    return {
+      reply: demoCheck.blocked ? demoCheck.fallback : reply,
+      usedModel: false,
+      usage: null,
+      blocked: !!demoCheck.blocked,
+      reason: demoCheck.blocked ? demoCheck.reason : 'demo_script',
+      demo: true,
+      agent: { version: AGENT_VERSION, mode: 'demo_script', strategyKey: decision.key }
+    };
   }
 
   const memories = collectMemories(message);
@@ -214,12 +255,15 @@ function finalizeTurn(ctx, result, t0) {
     sessionId,
     strategy: decision.key,
     riskLevel: inputSafety.riskLevel,
-    event: result.blocked ? 'output_blocked' : (inputSafety.riskLevel === 'L3' ? 'crisis_protocol' : 'llm_call'),
+    event: result.demo
+      ? 'demo_reply'
+      : (result.blocked ? 'output_blocked' : (inputSafety.riskLevel === 'L3' ? 'crisis_protocol' : 'llm_call')),
     model: getConfig().model,
     inputLength: message.length,
     latencyMs: Date.now() - t0,
     ok: true,
     meta: {
+      demo: result.demo === true,
       blocked: !!result.blocked,
       reason: result.reason,
       usage: result.usage,
@@ -247,6 +291,8 @@ function successPayload(ctx, result) {
     sessionId: ctx.sessionId,
     requestId: ctx.requestId,
     blocked: !!result.blocked,
+    // 诚实标注：演示模式生成的回复不属于真实模型输出
+    demo: result.demo === true,
     agent: result.agent || null,
     memory: ctx.explicit ? { action: ctx.explicit.type, item: (ctx.explicit.item && ctx.explicit.item.text) || null } : null
   };
@@ -370,7 +416,9 @@ router.post('/stream', async (req, res) => {
       strategyLabel: ctx.decision.label,
       riskLevel: ctx.inputSafety.riskLevel,
       route: ctx.route,
-      memoryCount: collectMemoryCountSafe(ctx.message)
+      memoryCount: collectMemoryCountSafe(ctx.message),
+      // 演示模式是否生效（有 Key 时永远为 false）
+      demo: isDemoActive()
     });
 
     // 先完整取回模型输出并做安全检查，确认安全后再流式下发
@@ -394,6 +442,8 @@ router.post('/stream', async (req, res) => {
       route: ctx.route,
       sessionId: ctx.sessionId,
       blocked: !!result.blocked,
+      // 诚实标注：演示模式生成的回复不属于真实模型输出
+      demo: result.demo === true,
       agent: result.agent || null,
       memory: ctx.explicit ? { action: ctx.explicit.type, item: (ctx.explicit.item && ctx.explicit.item.text) || null } : null
     });
@@ -423,6 +473,7 @@ router.post('/stream', async (req, res) => {
       route: ctx.route,
       sessionId: ctx.sessionId,
       blocked: false,
+      demo: false,
       error: friendlyMessage(e)
     });
   }
