@@ -152,6 +152,12 @@
     toasts: $('toasts'),
     scrim: $('scrim'),
 
+    // 桌面外壳（Tauri 无边框窗口）
+    titlebar: $('titlebar'),
+    titlebarMin: $('titlebar-min'),
+    titlebarMax: $('titlebar-max'),
+    titlebarClose: $('titlebar-close'),
+
     // 顶栏与入口
     modelWarn: $('model-warn'),
     debugToggle: $('debug-toggle'),
@@ -219,6 +225,9 @@
   // DOM 契约缺失时直接退出，避免整页报错
   if (!el.messages || !el.form || !el.input || !el.sendBtn) return;
 
+  // 桌面外壳（Tauri）标记尽早挂上，避免首帧布局跳动；浏览器里不做任何事
+  if (window.__TAURI__) document.documentElement.classList.add('is-tauri');
+
   /* ============================================================
    * 三、运行时状态
    * ============================================================ */
@@ -239,6 +248,9 @@
   let memoryCategories = MEMORY_CATEGORIES.slice(); // 分类表（接口优先）
   let memoryEnabledCache = true; // 记忆开关的最近状态
   let confirmResolve = null;   // 确认弹窗的 Promise resolve
+  let themeAnimTimer = 0;      // 主题平滑过渡的收尾计时器
+  let scrollBtnVisible = false;// 「回到最新」当前是否可见（避免滚动时反复改 DOM）
+  let lastRippleAt = 0;        // 发送键最近一次涟漪反馈的时间戳
 
   /* ============================================================
    * 四、通用工具
@@ -330,6 +342,164 @@
   function stableGap(seed, index) {
     const n = Math.abs(Number(seed) || 0) + index * 173;
     return PART_GAP_MIN + (n % (PART_GAP_MAX - PART_GAP_MIN));
+  }
+
+  /* ============================================================
+   * 四之二、动效工具（统一入口，方便一键降级为“无动效”）
+   * ============================================================ */
+
+  // 是否处于「减少动效」偏好；每次实时读取，系统设置中途改变也能生效
+  function reducedMotion() {
+    try {
+      return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function nextFrame(fn) {
+    try { window.requestAnimationFrame(fn); }
+    catch (e) { window.setTimeout(fn, 16); }
+  }
+
+  // 浮层（抽屉 / 向导 / 遮罩）的开合：关闭时先播退场动画，再挂 hidden
+  const layerTimers = new WeakMap();  // 节点 -> 退场计时器
+  const layerCleanup = new WeakMap(); // 节点 -> 动画期收尾计时器
+
+  function layerDelay(ms) {
+    return reducedMotion() ? 0 : Math.max(0, Number(ms) || 0);
+  }
+
+  function markAnimating(node, ms) {
+    if (!node) return;
+    const prev = layerCleanup.get(node);
+    if (prev) window.clearTimeout(prev);
+    // will-change 只在动画期间存在，动画结束立刻摘掉
+    node.classList.add('is-animating');
+    const timer = window.setTimeout(function () {
+      layerCleanup.delete(node);
+      node.classList.remove('is-animating');
+    }, reducedMotion() ? 0 : Math.max(120, Number(ms) || 240));
+    layerCleanup.set(node, timer);
+  }
+
+  function showLayer(node, openClass, duration) {
+    if (!node) return;
+    const pending = layerTimers.get(node);
+    if (pending) { window.clearTimeout(pending); layerTimers.delete(node); }
+    node.classList.remove('is-closing');
+    setHidden(node, false);
+    markAnimating(node, duration || 260);
+    // 先以闭合态渲染一帧，再加 is-open，过渡才有起点
+    nextFrame(function () {
+      if (node.hidden || node.classList.contains('is-closing')) return;
+      node.classList.add(openClass || 'is-open');
+    });
+  }
+
+  function hideLayer(node, duration, onDone) {
+    if (!node || node.hidden) {
+      if (node) node.classList.remove('is-open', 'is-closing');
+      if (typeof onDone === 'function') onDone();
+      return;
+    }
+    if (node.classList.contains('is-closing')) return; // 已在退场中，避免重复
+    const wait = layerDelay(duration || 200);
+    node.classList.remove('is-open');
+    node.classList.add('is-closing');
+    markAnimating(node, wait + 80);
+    const timer = window.setTimeout(function () {
+      layerTimers.delete(node);
+      node.classList.remove('is-closing', 'is-animating');
+      setHidden(node, true);
+      if (typeof onDone === 'function') onDone();
+    }, wait);
+    layerTimers.set(node, timer);
+  }
+
+  // 原生 <dialog> 没有退场时机，这里手动延后 close()
+  function openDialog(dialog) {
+    if (!dialog || typeof dialog.showModal !== 'function') return false;
+    const pending = layerTimers.get(dialog);
+    if (pending) { window.clearTimeout(pending); layerTimers.delete(dialog); }
+    dialog.classList.remove('is-closing', 'is-open');
+    try {
+      if (!dialog.open) dialog.showModal();
+    } catch (e) {
+      return false;
+    }
+    nextFrame(function () { dialog.classList.add('is-open'); });
+    return true;
+  }
+
+  function closeDialog(dialog, duration) {
+    if (!dialog) return;
+    if (!dialog.open) { dialog.classList.remove('is-open', 'is-closing'); return; }
+    if (dialog.classList.contains('is-closing')) return;
+    dialog.classList.remove('is-open');
+    dialog.classList.add('is-closing');
+    const timer = window.setTimeout(function () {
+      layerTimers.delete(dialog);
+      dialog.classList.remove('is-closing');
+      try { if (dialog.open) dialog.close(); } catch (e) { /* 忽略 */ }
+    }, layerDelay(duration || 190));
+    layerTimers.set(dialog, timer);
+  }
+
+  // 发送键：按下缩放 + 涟漪（只用 transform / opacity，不触发布局）
+  function ripple(btn) {
+    if (!btn || reducedMotion()) return;
+    const rect = btn.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const size = Math.max(rect.width, rect.height) * 2.1;
+    const dot = document.createElement('span');
+    dot.className = 'ripple';
+    dot.setAttribute('aria-hidden', 'true');
+    dot.style.width = size + 'px';
+    dot.style.height = size + 'px';
+    dot.style.left = (rect.width / 2 - size / 2) + 'px';
+    dot.style.top = (rect.height / 2 - size / 2) + 'px';
+    btn.appendChild(dot);
+    window.setTimeout(function () { if (dot.parentNode) dot.parentNode.removeChild(dot); }, 620);
+  }
+
+  function pressFeedback(btn) {
+    if (!btn || btn.disabled || reducedMotion()) return;
+    lastRippleAt = now();
+    ripple(btn);
+    btn.classList.add('is-pressing');
+    window.setTimeout(function () { btn.classList.remove('is-pressing'); }, 160);
+  }
+
+  // 键盘 / 表单提交路径的反馈：按钮快速回弹一下
+  function sendPulse() {
+    const btn = el.sendBtn;
+    if (!btn || reducedMotion()) return;
+    if (now() - lastRippleAt < 400) return; // 刚点过按钮就不再叠加
+    btn.classList.remove('is-pulse');
+    void btn.offsetWidth; // 重启动画
+    btn.classList.add('is-pulse');
+    window.setTimeout(function () { btn.classList.remove('is-pulse'); }, 300);
+    ripple(btn);
+  }
+
+  // 复制成功：图标短暂变成 ✓ + 「已复制」文字
+  function markCopied(btn) {
+    if (!btn) return;
+    const use = btn.querySelector('use');
+    const prevLabel = btn.getAttribute('aria-label') || '复制回复';
+    const prevHref = use ? use.getAttribute('href') : '';
+    if (btn.__copiedTimer) window.clearTimeout(btn.__copiedTimer);
+    btn.classList.add('is-done');
+    btn.setAttribute('aria-label', '已复制');
+    if (use) use.setAttribute('href', '#i-check');
+    btn.__copiedTimer = window.setTimeout(function () {
+      btn.__copiedTimer = 0;
+      btn.classList.remove('is-done');
+      if (!btn.isConnected) return; // 列表已重渲染，旧节点无需复原
+      btn.setAttribute('aria-label', prevLabel);
+      if (use && prevHref) use.setAttribute('href', prevHref);
+    }, 1400);
   }
 
   function makeApiError(message, status) {
@@ -790,8 +960,13 @@
     if (!msg.content && msg.streaming) {
       const bubble = makeEl('div', 'msg__bubble');
       const content = makeEl('div', 'msg__content');
-      if (msg.waitingText) content.textContent = msg.waitingText;
-      else content.innerHTML = DOTS_HTML;
+      if (msg.waitingText) {
+        content.textContent = msg.waitingText;
+        bubble.classList.add('is-waiting-hint'); // 文案切换时轻微淡入
+      } else {
+        content.innerHTML = DOTS_HTML;
+      }
+      bubble.setAttribute('aria-label', msg.waitingText || '心屿正在输入');
       bubble.appendChild(content);
       box.appendChild(bubble);
       return;
@@ -799,6 +974,7 @@
 
     const parts = (!msg.streaming && Array.isArray(msg.parts) && msg.parts.length > 1) ? msg.parts : null;
     const list = parts || [msg.content || ''];
+    const animate = !reducedMotion(); // 减少动效时直接出现，不排队
     let delay = 0;
     list.forEach((part, index) => {
       const bubble = makeBubble(renderMarkdown(part));
@@ -808,11 +984,11 @@
         caret.setAttribute('aria-hidden', 'true');
         if (content) content.appendChild(caret);
       }
-      if (parts) {
-        // 分气泡依次出现：每条间隔 350–800ms，带轻微上浮动画
+      if (parts && animate) {
+        // 分气泡依次出现：沿用 350–800ms 的拟人节奏，再叠加一点 stagger
         if (index > 0) delay += stableGap(msg.ts, index);
         bubble.classList.add('is-seq');
-        bubble.style.animationDelay = Math.round(delay) + 'ms';
+        bubble.style.animationDelay = Math.round(delay + index * 30) + 'ms';
       }
       box.appendChild(bubble);
     });
@@ -936,13 +1112,26 @@
     return buildSystemMessage(msg);
   }
 
-  function renderMessages() {
+  /**
+   * 渲染整段消息。
+   * animateFrom：从该下标开始的消息带「上浮 + 淡入 + 轻微缩放」入场动画，
+   * 其余（历史消息、会话切换）保持静态，避免整列表重播造成闪烁。
+   */
+  function renderMessages(animateFrom) {
     if (!el.messages) return;
     const session = getSession(activeId);
     el.messages.textContent = '';
     if (!session) return;
+    const from = Number.isInteger(animateFrom) ? animateFrom : -1;
+    const animate = from >= 0 && !reducedMotion();
     session.messages.forEach((msg, index) => {
-      el.messages.appendChild(buildMessageEl(msg, index));
+      const node = buildMessageEl(msg, index);
+      if (animate && index >= from) {
+        node.classList.add('is-enter');
+        const step = index - from;
+        if (step > 0) node.style.animationDelay = Math.round(step * 70) + 'ms';
+      }
+      el.messages.appendChild(node);
     });
     // 若正在流式更新，重新绑定被重建的 DOM 引用
     if (pending && pending.session === session) {
@@ -975,13 +1164,35 @@
     return li;
   }
 
+  // 上一次渲染的会话 id 列表：用来判断哪些是「新增」，从而只给新条目播入场动画
+  let renderedSessionIds = null;
+
   function renderSessionList() {
     if (!el.sessionList) return;
     const list = sortedSessions();
+    const prevIds = renderedSessionIds;
+    const isFirst = !prevIds;
     el.sessionList.textContent = '';
-    list.forEach((s) => el.sessionList.appendChild(buildSessionItem(s)));
+    list.forEach((s) => {
+      const li = buildSessionItem(s);
+      if (!isFirst && prevIds.indexOf(s.id) === -1 && !reducedMotion()) {
+        li.classList.add('is-entering'); // 新增：高度 + 透明度过渡，避免列表跳变
+      }
+      el.sessionList.appendChild(li);
+    });
+    renderedSessionIds = list.map((s) => s.id);
     // “没有其它会话时”显示空状态提示
     if (el.sessionsEmpty) setHidden(el.sessionsEmpty, list.length > 1);
+  }
+
+  // 按 id 找到会话列表里的 <li>（用于删除时的退场动画）
+  function sessionListItem(id) {
+    if (!el.sessionList) return null;
+    const items = el.sessionList.children;
+    for (let i = 0; i < items.length; i += 1) {
+      if (items[i].dataset.id === id) return items[i];
+    }
+    return null;
   }
 
   function updateTitle(session) {
@@ -1037,7 +1248,20 @@
   }
 
   function updateScrollButton() {
-    setHidden(el.scrollBottom, stickBottom);
+    const btn = el.scrollBottom;
+    if (!btn) return;
+    const shouldShow = !stickBottom;
+    if (shouldShow === scrollBtnVisible) return; // 滚动过程中不反复改 DOM
+    scrollBtnVisible = shouldShow;
+    if (shouldShow) {
+      setHidden(btn, false);
+      nextFrame(function () { btn.classList.add('is-visible'); }); // 浮起 + 淡入
+      return;
+    }
+    btn.classList.remove('is-visible');
+    window.setTimeout(function () {
+      if (!scrollBtnVisible) setHidden(btn, true); // 退场动画结束后再移出布局
+    }, layerDelay(180));
   }
 
   function handleScroll() {
@@ -1466,10 +1690,16 @@
     session.updatedAt = now();
 
     el.input.value = '';
+    // 发送后输入框高度平滑回落（只在回落这一下挂 transition，打字时不做布局动画）
+    if (!reducedMotion()) {
+      el.input.classList.add('is-collapsing');
+      window.setTimeout(function () { el.input.classList.remove('is-collapsing'); }, 240);
+    }
     autosize();
     syncComposer();
+    sendPulse();
 
-    renderMessages();
+    renderMessages(session.messages.length - 2); // 本轮的用户消息 + 助手占位依次入场
     renderSessionList();
     updateTitle(session);
     updateWelcome(session);
@@ -1523,7 +1753,7 @@
     msg.ts = now();
     session.updatedAt = now();
 
-    renderMessages();
+    renderMessages(index); // 重试时该条回复重新入场
     stickBottom = true;
     updateScrollButton();
     scrollToBottom(false);
@@ -1586,18 +1816,29 @@
     const wasActive = id === activeId;
     if (wasActive) abortActiveStream();
 
-    sessions = sessions.filter((s) => s.id !== id);
-    if (wasActive) {
-      activeId = '';
-      saveState();
-      ensureActive();
-      renderAll();
+    const remove = function () {
+      sessions = sessions.filter((s) => s.id !== id);
+      if (wasActive) {
+        activeId = '';
+        saveState();
+        ensureActive();
+        renderAll();
+      } else {
+        saveState();
+        renderSessionList();
+      }
+      toast('已删除这个对话', 'success');
+      closeSidebar();
+    };
+
+    // 先播「高度 + 透明度」退场动画，再真正移除，避免列表瞬间跳变
+    const li = sessionListItem(id);
+    if (li && !reducedMotion()) {
+      li.classList.add('is-leaving');
+      window.setTimeout(remove, 200);
     } else {
-      saveState();
-      renderSessionList();
+      remove();
     }
-    toast('已删除这个对话', 'success');
-    closeSidebar();
   }
 
   /* ============================================================
@@ -1639,23 +1880,33 @@
   }
 
   function toggleTheme() {
-    const current = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+    const root = document.documentElement;
+    const current = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
     const next = current === 'dark' ? 'light' : 'dark';
+    // 平滑过渡：切换期间给根节点挂类，240ms 后摘掉（不改动其它组件自身的 transition）
+    if (!reducedMotion()) {
+      if (themeAnimTimer) window.clearTimeout(themeAnimTimer);
+      root.classList.add('is-theme-anim');
+      themeAnimTimer = window.setTimeout(function () {
+        themeAnimTimer = 0;
+        root.classList.remove('is-theme-anim');
+      }, 280);
+    }
     applyTheme(next);
     try { localStorage.setItem(LS_KEYS.theme, next); } catch (e) { /* 忽略 */ }
   }
 
   function openAbout() {
     if (!el.aboutModal || typeof el.aboutModal.showModal !== 'function') return;
-    try { el.aboutModal.showModal(); } catch (e) { /* 忽略 */ }
+    try { openDialog(el.aboutModal); } catch (e) { /* 忽略 */ }
   }
 
   function closeAbout() {
     if (!el.aboutModal) return;
-    try { if (el.aboutModal.open) el.aboutModal.close(); } catch (e) { /* 忽略 */ }
+    try { closeDialog(el.aboutModal); } catch (e) { /* 忽略 */ }
   }
 
-  async function copyMessage(text) {
+  async function copyMessage(text, btn) {
     const value = String(text || '');
     if (!value) { toast('这条回复还是空的', 'error'); return; }
     let ok = false;
@@ -1663,6 +1914,7 @@
       try { await navigator.clipboard.writeText(value); ok = true; } catch (e) { ok = false; }
     }
     if (!ok) ok = legacyCopy(value);
+    if (ok) markCopied(btn); // 按钮短暂变成「✓ 已复制」
     toast(ok ? COPY_OK_TEXT : COPY_FAIL_TEXT, ok ? 'success' : 'error');
   }
 
@@ -1767,10 +2019,21 @@
         // 点击 ::backdrop 时，事件目标就是 dialog 本身
         if (e.target === el.aboutModal) closeAbout();
       });
+      // Esc：拦下原生立即关闭，改走带退场动画的关闭
+      el.aboutModal.addEventListener('cancel', function (e) {
+        e.preventDefault();
+        closeAbout();
+      });
     }
 
     // 输入区
     if (el.form) el.form.addEventListener('submit', function (e) { e.preventDefault(); submitMessage(); });
+    // 发送键：按压缩放 + 涟漪（pointerdown 比 click 更跟手；禁用态不会触发）
+    if (el.sendBtn) {
+      el.sendBtn.addEventListener('pointerdown', function () { pressFeedback(el.sendBtn); });
+      el.sendBtn.addEventListener('pointerleave', function () { el.sendBtn.classList.remove('is-pressing'); });
+      el.sendBtn.addEventListener('pointercancel', function () { el.sendBtn.classList.remove('is-pressing'); });
+    }
     if (el.input) {
       el.input.addEventListener('input', function () { autosize(); syncComposer(); });
       el.input.addEventListener('compositionstart', function () { composing = true; });
@@ -1808,7 +2071,7 @@
         const session = getSession(activeId);
         const msg = session && session.messages[index];
         if (!msg || msg.role !== 'assistant') return;
-        if (btn.dataset.action === 'copy') copyMessage(msg.content);
+        if (btn.dataset.action === 'copy') copyMessage(msg.content, btn);
         else if (btn.dataset.action === 'retry') retryMessage(index);
       });
     }
@@ -1907,10 +2170,17 @@
       el.confirmModal.addEventListener('click', function (e) {
         if (e.target === el.confirmModal) settleConfirm(false);
       });
+      el.confirmModal.addEventListener('cancel', function (e) {
+        e.preventDefault(); // 同上：Esc 也走退场动画
+        settleConfirm(false);
+      });
       el.confirmModal.addEventListener('close', function () {
         if (confirmResolve) settleConfirm(false);
       });
     }
+
+    // 桌面外壳（Tauri）窗口按钮
+    bindTitlebar();
 
     // Esc：按层级关闭（弹窗的 Esc 由 <dialog> 原生处理）
     document.addEventListener('keydown', function (e) {
@@ -1955,28 +2225,31 @@
         el.confirmOk.textContent = opt.confirmText || '确定';
         el.confirmOk.classList.toggle('btn--danger', opt.danger !== false);
       }
-      try { el.confirmModal.showModal(); } catch (e) { settleConfirm(false); }
+      if (!openDialog(el.confirmModal)) settleConfirm(false);
     });
   }
 
   function settleConfirm(value) {
     const resolve = confirmResolve;
     confirmResolve = null;
-    try { if (el.confirmModal && el.confirmModal.open) el.confirmModal.close(); } catch (e) { /* 忽略 */ }
+    // 先给出结果，再播退场动画（Promise 不会因为动画延迟）
+    closeDialog(el.confirmModal);
     if (resolve) resolve(!!value);
   }
 
   function openDrawer(name) {
     closeSidebar();
     activeDrawer = name;
-    setHidden(el.drawerScrim, false);
-    setHidden(el.settingsDrawer, name !== 'settings');
-    setHidden(el.memoryDrawer, name !== 'memory');
+    const panel = name === 'settings' ? el.settingsDrawer : (name === 'memory' ? el.memoryDrawer : null);
+    const other = name === 'settings' ? el.memoryDrawer : el.settingsDrawer;
+    hideLayer(other, 160);                       // 两个抽屉互斥：另一个播退场
+    showLayer(el.drawerScrim, 'is-open', 220);   // 遮罩淡入（关闭时同样有淡出）
+    showLayer(panel, 'is-open', 280);            // 滑入 + 缩放 + 淡入
     if (name === 'settings') loadConfig();
     else if (name === 'memory') loadMemory();
-    const panel = name === 'settings' ? el.settingsDrawer : (name === 'memory' ? el.memoryDrawer : null);
     if (panel) {
       window.setTimeout(function () {
+        if (panel.hidden) return;
         const focusable = panel.querySelector('input, select, textarea, button');
         if (focusable) { try { focusable.focus(); } catch (e) { /* 忽略 */ } }
       }, 80);
@@ -1985,9 +2258,9 @@
 
   function closeDrawer() {
     activeDrawer = '';
-    setHidden(el.drawerScrim, true);
-    setHidden(el.settingsDrawer, true);
-    setHidden(el.memoryDrawer, true);
+    hideLayer(el.settingsDrawer, 200);
+    hideLayer(el.memoryDrawer, 200);
+    hideLayer(el.drawerScrim, 200);
   }
 
   function isWizardOpen() {
@@ -2046,21 +2319,24 @@
 
   function openWizard(step) {
     if (!el.wizard) return;
-    setHidden(el.wizard, false);
     showWizardStep(step || 1);
+    showLayer(el.wizard, 'is-open', 300); // 卡片滑入 + 缩放 + 淡入
     window.setTimeout(function () {
+      if (el.wizard.hidden) return;
       if (wizardStep === 3 && el.wizardKey) { try { el.wizardKey.focus(); } catch (e) { /* 忽略 */ } }
     }, 80);
   }
 
   function closeWizard(dismissed) {
     if (!el.wizard) return;
-    setHidden(el.wizard, true);
     if (dismissed) {
       try { localStorage.setItem(LS_KEYS.setup, 'dismissed'); } catch (e) { /* 忽略 */ }
     }
-    if (healthConfigured === false) setHidden(el.modelWarn, false);
-    focusInput();
+    // 先播退场动画，动画结束后再隐藏并归还焦点
+    hideLayer(el.wizard, 220, function () {
+      if (healthConfigured === false) setHidden(el.modelWarn, false);
+      focusInput();
+    });
   }
 
   async function submitWizardConfig() {
@@ -2505,10 +2781,102 @@
   }
 
   /* ============================================================
+   * 二十、桌面外壳（Tauri 无边框窗口）
+   * ------------------------------------------------------------
+   * 只有检测到 window.__TAURI__ 时才显示自定义标题栏；
+   * 浏览器模式（评审 / 普通访问）完全保持原布局，没有任何多余元素。
+   * ============================================================ */
+
+  let tauriWindow = null;
+
+  function tauriWindowRef() {
+    const api = window.__TAURI__;
+    if (!api) return null;
+    try {
+      if (api.window && typeof api.window.getCurrentWindow === 'function') {
+        const ref = api.window.getCurrentWindow(); // Tauri v2：同步返回窗口对象
+        return (ref && typeof ref.then === 'function') ? ref : Promise.resolve(ref);
+      }
+      if (api.window && typeof api.window.getCurrent === 'function') {
+        return Promise.resolve(api.window.getCurrent()); // Tauri v1 兼容
+      }
+      if (api.window && api.window.Window && typeof api.window.Window.getCurrent === 'function') {
+        return Promise.resolve(api.window.Window.getCurrent());
+      }
+    } catch (e) { /* 忽略：权限或平台差异 */ }
+    return null;
+  }
+
+  function callWindow(method) {
+    const win = tauriWindow;
+    if (!win || typeof win[method] !== 'function') return;
+    try {
+      const result = win[method]();
+      if (result && typeof result.catch === 'function') result.catch(function () { /* 忽略 */ });
+    } catch (e) { /* 忽略 */ }
+  }
+
+  // 最大化 / 还原时同步按钮图标与 aria-label
+  function syncMaximizeIcon() {
+    const btn = el.titlebarMax;
+    if (!btn || !tauriWindow || typeof tauriWindow.isMaximized !== 'function') return;
+    let result = null;
+    try { result = tauriWindow.isMaximized(); } catch (e) { return; }
+    Promise.resolve(result).then(function (maximized) {
+      const on = !!maximized;
+      const use = btn.querySelector('use');
+      if (use) use.setAttribute('href', on ? '#i-restore' : '#i-max');
+      const label = on ? '还原窗口' : '最大化窗口';
+      btn.setAttribute('aria-label', label);
+      btn.title = label;
+    }).catch(function () { /* 忽略 */ });
+  }
+
+  function bindTitlebar() {
+    if (el.titlebarMin) el.titlebarMin.addEventListener('click', function () { callWindow('minimize'); });
+    if (el.titlebarMax) {
+      el.titlebarMax.addEventListener('click', function () {
+        callWindow('toggleMaximize');
+        window.setTimeout(syncMaximizeIcon, 140);
+      });
+    }
+    if (el.titlebarClose) el.titlebarClose.addEventListener('click', function () { callWindow('close'); });
+    // 双击拖拽区 = 最大化 / 还原，和原生标题栏一致
+    if (el.titlebar) {
+      el.titlebar.addEventListener('dblclick', function (e) {
+        if (e.target.closest('.titlebar__controls')) return;
+        callWindow('toggleMaximize');
+        window.setTimeout(syncMaximizeIcon, 140);
+      });
+    }
+  }
+
+  function initDesktopShell() {
+    if (!window.__TAURI__) return; // 浏览器：不显示标题栏
+    document.documentElement.classList.add('is-tauri');
+    if (el.titlebar) setHidden(el.titlebar, false);
+    const ref = tauriWindowRef();
+    if (!ref) return;
+    Promise.resolve(ref).then(function (win) {
+      if (!win || typeof win !== 'object') return;
+      tauriWindow = win;
+      syncMaximizeIcon();
+      try {
+        if (typeof win.onResized === 'function') {
+          const handle = win.onResized(function () { syncMaximizeIcon(); });
+          if (handle && typeof handle.catch === 'function') handle.catch(function () { /* 忽略 */ });
+        }
+      } catch (e) { /* 忽略 */ }
+    }).catch(function () { /* 忽略 */ });
+  }
+
+  /* ============================================================
    * 二十一、初始化
    * ============================================================ */
 
   function init() {
+    initDesktopShell(); // 先判定是否运行在 Tauri 里，再渲染其余界面
+
     el.messages.setAttribute('aria-live', 'polite'); // 无障碍：消息区播报
 
     initTheme();

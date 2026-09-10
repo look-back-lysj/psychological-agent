@@ -77,11 +77,25 @@
   --r-xl: 20px;
   --r-full: 999px;
 
-  /* 阴影（克制） */
+  /* 阴影（统一 sm / md / lg / xl 四级，hover 时平滑加深） */
   --sh-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
-  --sh-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --sh-sm: 0 1px 2px rgba(15, 23, 42, 0.05), 0 2px 6px rgba(15, 23, 42, 0.05);
   --sh: 0 8px 24px rgba(15, 23, 42, 0.08);
   --sh-lg: 0 22px 48px rgba(15, 23, 42, 0.16);
+  --sh-md: 0 6px 18px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.05);
+  --sh-xl: 0 34px 76px rgba(15, 23, 42, 0.18), 0 12px 28px rgba(15, 23, 42, 0.08);
+
+  /* 玻璃拟态材质：半透明底 + 1px 高光内描边 */
+  --glass: rgba(255, 255, 255, 0.70);
+  --glass-strong: rgba(255, 255, 255, 0.86);
+  --glass-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.50);
+  --glass-top: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  --glass-blur: 18px;
+
+  /* 背景装饰光晕 */
+  --glow-a: rgba(91, 141, 239, 0.13);
+  --glow-b: rgba(79, 209, 197, 0.10);
+  --glow-c: rgba(129, 140, 248, 0.09);
 
   /* 间距（8 的倍数体系） */
   --sp-1: 4px;
@@ -106,13 +120,18 @@
   --dur-fast: 150ms;
   --dur: 200ms;
   --dur-slow: 250ms;
+  --dur-enter: 280ms;
+  --dur-theme: 240ms;
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* 轻微回弹的 spring 手感（仅用于 transform / opacity） */
+  --ease-spring: cubic-bezier(0.2, 1.16, 0.32, 1);
 
   /* 尺寸 */
   --sidebar-w: 280px;
   --topbar-h: 64px;
   --content-w: 820px;
+  --titlebar-h: 38px;
 }
 
 /* 深色主题：仅覆盖变量，不重写整套样式 */
@@ -158,6 +177,18 @@ html[data-theme="dark"] {
   --sh-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
   --sh: 0 10px 28px rgba(0, 0, 0, 0.45);
   --sh-lg: 0 26px 56px rgba(0, 0, 0, 0.6);
+  --sh-md: 0 8px 22px rgba(0, 0, 0, 0.42);
+  --sh-xl: 0 36px 80px rgba(0, 0, 0, 0.62);
+
+  /* 深色下的玻璃更沉、更含蓄 */
+  --glass: rgba(22, 27, 34, 0.70);
+  --glass-strong: rgba(22, 27, 34, 0.88);
+  --glass-ring: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --glass-top: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+
+  --glow-a: rgba(90, 130, 220, 0.16);
+  --glow-b: rgba(60, 190, 180, 0.10);
+  --glow-c: rgba(110, 120, 210, 0.12);
 }
 
 /* =======================================================================
@@ -183,9 +214,10 @@ body {
     system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
     sans-serif;
   font-size: var(--fs-base);
-  line-height: 1.6;
+  line-height: 1.7;
   color: var(--text);
   background: var(--bg);
+  font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -2602,4 +2634,813 @@ select.input { padding-right: var(--sp-2); cursor: pointer; }
   margin-top: var(--sp-2);
   padding-top: var(--sp-4);
   border-top: 1px solid var(--border);
+}
+
+/* =======================================================================
+   17. 质感与微交互升级（桌面外壳 / 玻璃材质 / 动效节奏）
+   ---------------------------------------------------------------------
+   约定：
+   - 新增动画只使用 transform 与 opacity（translate3d 直接提示合成）；
+   - will-change 仅在动画期间由 JS 临时挂载 .is-animating，避免长期占层；
+   - 所有新动效都在文件末尾的 prefers-reduced-motion 块里被关闭。
+   ======================================================================= */
+
+/* ── 17.1 背景装饰光晕（aria-hidden + pointer-events:none）────────── */
+.bg-aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(760px 460px at 8% -8%, var(--glow-a), transparent 62%),
+    radial-gradient(660px 420px at 96% 4%, var(--glow-b), transparent 66%),
+    radial-gradient(900px 620px at 52% 118%, var(--glow-c), transparent 72%);
+}
+
+/* 应用主体压在光晕之上，形成前后层次 */
+.app {
+  position: relative;
+  z-index: 1;
+}
+
+/* ── 17.2 桌面外壳：Tauri 无边框窗口标题栏 ───────────────────────── */
+.titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 90;
+  display: none; /* 浏览器模式：完全不出现，布局保持原样 */
+  align-items: center;
+  gap: var(--sp-2);
+  height: var(--titlebar-h);
+  padding: 0 6px 0 var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  background-color: var(--glass-strong);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+  box-shadow: var(--glass-top);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+html.is-tauri .titlebar {
+  display: flex;
+}
+
+.titlebar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: none;
+  height: 100%;
+  padding-right: var(--sp-2);
+}
+
+.titlebar__mark {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--grad-brand);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 3px 10px var(--glow-brand);
+}
+
+.titlebar__name {
+  color: var(--text-soft);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+/* 拖拽区：Tauri 依靠 data-tauri-drag-region 拖动窗口 */
+.titlebar__drag {
+  flex: 1;
+  height: 100%;
+  min-width: 24px;
+}
+
+.titlebar__controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.titlebar__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 15px;
+  cursor: pointer;
+  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease),
+    transform var(--dur-fast) var(--ease);
+}
+
+.titlebar__btn:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.titlebar__btn:active {
+  transform: scale(0.92);
+}
+
+.titlebar__btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.titlebar__btn--close:hover,
+.titlebar__btn--close:active {
+  background: var(--error);
+  color: #ffffff;
+}
+
+/* 加壳后为标题栏预留空间：只调整高度，不产生第二个滚动条 */
+html.is-tauri,
+html.is-tauri body {
+  overflow: hidden;
+  height: 100%;
+}
+
+html.is-tauri body {
+  padding-top: var(--titlebar-h);
+}
+
+html.is-tauri .app,
+html.is-tauri .main {
+  height: calc(100dvh - var(--titlebar-h));
+}
+
+/* 固定浮层同样从标题栏下方开始，避免遮挡窗口按钮 */
+html.is-tauri .scrim,
+html.is-tauri .drawer-scrim,
+html.is-tauri .wizard,
+html.is-tauri .drawer {
+  top: var(--titlebar-h);
+}
+
+html.is-tauri .wizard__card {
+  max-height: min(84dvh, 740px);
+}
+
+/* ── 17.3 玻璃材质与光影层级 ─────────────────────────────────────── */
+.sidebar,
+.topbar,
+.composer,
+.drawer,
+dialog.modal,
+.wizard__card,
+.toast,
+.composer__form {
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.35);
+}
+
+.sidebar {
+  background-color: var(--glass);
+  box-shadow: var(--glass-ring);
+}
+
+.topbar {
+  background-color: var(--glass);
+  box-shadow: var(--glass-top);
+}
+
+.composer {
+  background-color: var(--glass);
+  box-shadow: var(--glass-top);
+}
+
+.composer__form {
+  background-color: var(--glass-strong);
+  box-shadow: var(--sh-sm), var(--glass-ring);
+}
+
+.composer__form:focus-within {
+  box-shadow: 0 0 0 4px var(--focus), var(--sh-md), var(--glass-top);
+}
+
+.drawer {
+  background-color: var(--glass-strong);
+  box-shadow: var(--sh-xl), var(--glass-ring), var(--glass-top);
+}
+
+dialog.modal,
+.wizard__card {
+  background-color: var(--glass-strong);
+  box-shadow: var(--sh-xl), var(--glass-ring), var(--glass-top);
+}
+
+.toast {
+  background-color: var(--glass-strong);
+  box-shadow: var(--sh-md), var(--glass-ring), var(--glass-top);
+}
+
+.mem-item {
+  background-color: var(--surface);
+  transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease),
+    border-color var(--dur) var(--ease), background-color var(--dur) var(--ease);
+}
+
+/* 主按钮：极轻的内高光，hover 时阴影平滑加深 */
+.btn--primary {
+  box-shadow: 0 6px 16px var(--glow-brand), var(--glass-top);
+}
+
+.btn--primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 26px var(--glow-brand), var(--glass-top);
+}
+
+.btn--primary:active {
+  transform: translateY(1px) scale(0.992);
+  box-shadow: 0 4px 12px var(--glow-brand), var(--glass-top);
+}
+
+.btn:active,
+.icon-btn:active,
+.ghost-btn:active {
+  transform: translateY(1px) scale(0.99); /* 统一下沉感 */
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .mem-item:hover {
+    transform: translateY(-1px);
+    border-color: var(--border-strong);
+    box-shadow: var(--sh-md);
+  }
+
+  .session-item:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--sh-sm);
+  }
+
+  .dbg:hover,
+  .adv:hover {
+    border-color: var(--border-strong);
+  }
+
+  .mem-item__actions .icon-btn:hover {
+    color: var(--brand-strong);
+    background: var(--brand-soft);
+  }
+}
+
+/* 更清晰的焦点环（键盘用户） */
+.btn:focus-visible,
+.icon-btn:focus-visible,
+.ghost-btn:focus-visible,
+.suggestion:focus-visible,
+.mem-item__actions .icon-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus), var(--glass-ring);
+}
+
+/* ── 17.4 深浅色切换：平滑过渡，不闪白（≤250ms）─────────────────── */
+html {
+  transition: background-color var(--dur-theme) var(--ease);
+}
+
+body {
+  transition: background-color var(--dur-theme) var(--ease),
+    color var(--dur-theme) var(--ease);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html.is-theme-anim,
+  html.is-theme-anim *,
+  html.is-theme-anim *::before,
+  html.is-theme-anim *::after {
+    transition: background-color var(--dur-theme) var(--ease),
+      color var(--dur-theme) var(--ease),
+      border-color var(--dur-theme) var(--ease),
+      box-shadow var(--dur-theme) var(--ease) !important;
+  }
+}
+
+/* ── 17.5 消息：上浮 + 淡入 + 轻微缩放（spring 手感）─────────────── */
+.msg {
+  animation: none; /* 改由 .is-enter 驱动：重渲染整列表时不再集体重播 */
+}
+
+.msg.is-enter {
+  animation: msg-in var(--dur-enter) var(--ease-spring) both;
+}
+
+.msg.is-enter .msg__avatar {
+  animation: bubble-in 300ms var(--ease-spring) both;
+}
+
+.msg__bubble {
+  line-height: 1.75;
+}
+
+.msg__bubble.is-seq {
+  animation: bubble-in 300ms var(--ease-spring) both; /* 分气泡依次出现 */
+}
+
+.msg__bubble.is-waiting-hint {
+  animation: fade-in 220ms var(--ease-out) both;
+}
+
+@keyframes msg-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0) scale(0.982);
+  }
+  62% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes bubble-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ── 17.6 打字指示：不等距节奏，更像真人 ─────────────────────────── */
+.dots > * {
+  animation: dot-tap 1.05s var(--ease) infinite;
+}
+
+.dots > *:nth-child(1) {
+  animation-delay: 0ms;
+  animation-duration: 1.02s;
+}
+
+.dots > *:nth-child(2) {
+  animation-delay: 130ms;
+  animation-duration: 0.92s;
+}
+
+.dots > *:nth-child(3) {
+  animation-delay: 290ms;
+  animation-duration: 1.14s;
+}
+
+@keyframes dot-tap {
+  0%,
+  62%,
+  100% {
+    transform: translateY(0) scale(0.86);
+    opacity: 0.42;
+  }
+  18% {
+    transform: translateY(-4px) scale(1);
+    opacity: 1;
+  }
+  36% {
+    transform: translateY(-1px) scale(0.96);
+    opacity: 0.82;
+  }
+}
+
+/* ── 17.7 发送按钮：按压缩放 + 涟漪，输入框平滑回落 ─────────────── */
+.send-btn {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.send-btn .icon {
+  position: relative;
+  z-index: 1;
+}
+
+.send-btn:active:not(:disabled),
+.send-btn.is-pressing:not(:disabled) {
+  transform: scale(0.9);
+}
+
+.send-btn.is-pulse:not(:disabled) {
+  animation: send-pop 240ms var(--ease-spring);
+}
+
+@keyframes send-pop {
+  0% {
+    transform: scale(1);
+  }
+  38% {
+    transform: scale(0.9);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.ripple {
+  position: absolute;
+  z-index: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.06) 70%);
+  transform: scale(0.15);
+  opacity: 0.8;
+  pointer-events: none;
+  animation: ripple-out 560ms var(--ease-out) forwards;
+}
+
+@keyframes ripple-out {
+  to {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* 发送后输入框高度平滑回落（只在回落的那一下挂 transition） */
+#message.is-collapsing {
+  transition: height var(--dur) var(--ease-out);
+}
+
+/* ── 17.8 回到最新：浮起 + 淡入 ─────────────────────────────────── */
+.scroll-bottom {
+  opacity: 0;
+  transform: translate3d(0, 10px, 0) scale(0.94);
+  animation: none;
+  box-shadow: var(--sh-md), var(--glass-top);
+  transition: opacity var(--dur) var(--ease-out),
+    transform var(--dur) var(--ease-spring), box-shadow var(--dur) var(--ease),
+    border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.scroll-bottom.is-visible {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scale(1);
+}
+
+.scroll-bottom.is-visible:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: var(--sh-lg);
+}
+
+.scroll-bottom.is-visible:active {
+  transform: translateY(0) scale(0.97);
+}
+
+/* ── 17.9 会话列表：存在 / 删除用高度 + 透明度过渡 ───────────────── */
+.session-item {
+  overflow: hidden;
+  max-height: 88px;
+  transition: background-color var(--dur) var(--ease), transform 220ms var(--ease-out),
+    box-shadow var(--dur) var(--ease), max-height 220ms var(--ease-out),
+    opacity 180ms var(--ease);
+}
+
+.session-item.is-entering {
+  animation: session-in 220ms var(--ease-out) both;
+}
+
+.session-item.is-leaving {
+  max-height: 0;
+  opacity: 0;
+  transform: translate3d(0, -4px, 0);
+  pointer-events: none;
+}
+
+@keyframes session-in {
+  from {
+    opacity: 0;
+    max-height: 0;
+    transform: translate3d(0, -4px, 0);
+  }
+  to {
+    opacity: 1;
+    max-height: 88px;
+    transform: none;
+  }
+}
+
+/* ── 17.10 抽屉 / 弹窗 / 向导：滑入 + 缩放 + 淡入，且有退场动画 ──── */
+.drawer {
+  animation: none;
+  opacity: 0;
+  transform: translate3d(26px, 0, 0) scale(0.995);
+  transition: opacity var(--dur) var(--ease), transform var(--dur-slow) var(--ease-out);
+}
+
+.drawer.is-open {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+.drawer.is-closing {
+  opacity: 0;
+  transform: translate3d(18px, 0, 0) scale(0.995);
+}
+
+.drawer-scrim {
+  animation: none;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.drawer-scrim.is-open {
+  opacity: 1;
+}
+
+.drawer-scrim.is-closing {
+  opacity: 0;
+}
+
+.wizard {
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.wizard.is-open {
+  opacity: 1;
+}
+
+.wizard__backdrop {
+  animation: none;
+}
+
+.wizard__card {
+  animation: none;
+  opacity: 0;
+  transform: translate3d(0, 14px, 0) scale(0.975);
+  transition: opacity var(--dur) var(--ease-out), transform 300ms var(--ease-spring);
+}
+
+.wizard.is-open .wizard__card {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+/* will-change 只在动画期间挂载 */
+.drawer.is-animating,
+.wizard.is-animating .wizard__card {
+  will-change: transform, opacity;
+}
+
+dialog.modal {
+  opacity: 0;
+  transform: translate3d(0, 12px, 0) scale(0.975);
+  transition: opacity var(--dur) var(--ease-out), transform 260ms var(--ease-spring);
+}
+
+dialog.modal[open] {
+  animation: none;
+}
+
+dialog.modal[open].is-open {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+dialog.modal[open].is-closing {
+  opacity: 0;
+  transform: translate3d(0, 8px, 0) scale(0.985);
+}
+
+dialog.modal.is-closing::backdrop {
+  animation: scrim-out 180ms var(--ease) both;
+}
+
+@keyframes scrim-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* ── 17.11 空状态建议胶囊：上浮 + 渐变描边 + 依次淡入 ────────────── */
+.suggestions .suggestion {
+  animation: chip-in 320ms var(--ease-out) both;
+}
+
+.suggestions .suggestion:nth-child(1) {
+  animation-delay: 40ms;
+}
+
+.suggestions .suggestion:nth-child(2) {
+  animation-delay: 110ms;
+}
+
+.suggestions .suggestion:nth-child(3) {
+  animation-delay: 180ms;
+}
+
+.suggestions .suggestion:nth-child(4) {
+  animation-delay: 250ms;
+}
+
+@keyframes chip-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.suggestion:hover {
+  transform: translateY(-2px);
+  border-color: transparent;
+  background-color: var(--surface);
+  background-image: linear-gradient(var(--surface), var(--surface)), var(--grad-brand);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  color: var(--brand-strong);
+  box-shadow: 0 12px 26px var(--glow-brand), var(--glass-top);
+}
+
+.suggestion:active {
+  transform: translateY(0) scale(0.985);
+}
+
+/* ── 17.12 复制成功：按钮短暂变成「已复制」─────────────────────── */
+.msg__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid transparent;
+  transition: background-color var(--dur) var(--ease), color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease), transform var(--dur-fast) var(--ease);
+}
+
+.msg__action.is-done {
+  color: var(--ok);
+  background: var(--ok-bg);
+  border-color: var(--ok-border);
+}
+
+.msg__action.is-done::after {
+  content: "已复制";
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  animation: fade-in 200ms var(--ease-out) both;
+}
+
+/* ── 17.13 错误 Toast 轻微抖动 ───────────────────────────────────── */
+.toast--error {
+  animation: toast-in var(--dur-slow) var(--ease-out) both,
+    toast-shake 340ms var(--ease) 120ms both;
+}
+
+@keyframes toast-shake {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  22% {
+    transform: translate3d(-3px, 0, 0);
+  }
+  44% {
+    transform: translate3d(3px, 0, 0);
+  }
+  66% {
+    transform: translate3d(-2px, 0, 0);
+  }
+  84% {
+    transform: translate3d(1px, 0, 0);
+  }
+}
+
+/* ── 17.14 滚动条：极细，悬停才明显 ─────────────────────────────── */
+.chat,
+.session-list,
+.drawer__body,
+.wizard__body,
+.modal__body,
+#message {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.chat:hover,
+.session-list:hover,
+.drawer__body:hover,
+.wizard__body:hover,
+.modal__body:hover,
+#message:hover {
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.chat::-webkit-scrollbar,
+.session-list::-webkit-scrollbar,
+.drawer__body::-webkit-scrollbar,
+.wizard__body::-webkit-scrollbar,
+.modal__body::-webkit-scrollbar,
+#message::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.chat::-webkit-scrollbar-thumb,
+.session-list::-webkit-scrollbar-thumb,
+.drawer__body::-webkit-scrollbar-thumb,
+.wizard__body::-webkit-scrollbar-thumb,
+.modal__body::-webkit-scrollbar-thumb,
+#message::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: var(--r-full);
+  background-color: transparent;
+  background-clip: content-box;
+}
+
+.chat:hover::-webkit-scrollbar-thumb,
+.session-list:hover::-webkit-scrollbar-thumb,
+.drawer__body:hover::-webkit-scrollbar-thumb,
+.wizard__body:hover::-webkit-scrollbar-thumb,
+.modal__body:hover::-webkit-scrollbar-thumb,
+#message:hover::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+}
+
+.chat::-webkit-scrollbar-thumb:hover,
+.session-list::-webkit-scrollbar-thumb:hover,
+.drawer__body::-webkit-scrollbar-thumb:hover,
+.modal__body::-webkit-scrollbar-thumb:hover,
+#message::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-faint);
+}
+
+/* 长滚动区提示浏览器按滚动合成处理，长列表不额外挂 will-change */
+.chat {
+  will-change: scroll-position;
+}
+
+/* ── 17.15 窄屏下的标题栏与浮层高度修正 ─────────────────────────── */
+@media (max-width: 860px) {
+  html.is-tauri .sidebar {
+    top: var(--titlebar-h);
+  }
+
+  html.is-tauri .wizard__card {
+    height: calc(100dvh - var(--titlebar-h));
+    max-height: calc(100dvh - var(--titlebar-h));
+  }
+}
+
+/* 极窄窗口：标题栏品牌文字让位给拖拽区 */
+@media (max-width: 420px) {
+  .titlebar__name {
+    display: none;
+  }
+}
+
+/* ── 17.16 无障碍：完整尊重「减少动效」偏好（放最后确保覆盖）──── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .msg,
+  .msg.is-enter,
+  .msg.is-enter .msg__avatar,
+  .msg__bubble.is-seq,
+  .msg__bubble.is-waiting-hint,
+  .scroll-bottom,
+  .session-item.is-entering,
+  .suggestions .suggestion,
+  .toast,
+  .toast--error,
+  .drawer,
+  .drawer-scrim,
+  .wizard__card,
+  .wizard__backdrop,
+  dialog.modal[open],
+  .dots > * {
+    animation: none !important;
+  }
+
+  .scroll-bottom {
+    opacity: 1;
+    transform: none;
+  }
 }

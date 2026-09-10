@@ -6,6 +6,7 @@
  */
 
 const { createSessionState } = require('./strategy');
+const { createInnerState } = require('./innerstate');
 
 const MAX_TURNS = 8;                       // 送入模型的历史轮数上限（用户轮）
 const SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6 小时未活动即回收
@@ -37,6 +38,7 @@ function ensureSession(sessionId) {
   const created = {
     turns: [],
     state: createSessionState(),
+    innerState: createInnerState(),
     riskHistory: [],
     summary: '',
     pendingTurns: [],   // 待抽取长期记忆的对话缓冲
@@ -70,6 +72,11 @@ function getHistory(sessionId) {
 function getState(sessionId) {
   const s = ensureSession(sessionId);
   return s ? s.state : createSessionState();
+}
+
+function getInnerState(sessionId) {
+  const s = ensureSession(sessionId);
+  return s ? s.innerState : createInnerState();
 }
 
 function getRiskHistory(sessionId) {
@@ -114,6 +121,7 @@ module.exports = {
   addTurn,
   getHistory,
   getState,
+  getInnerState,
   getRiskHistory,
   pushPendingTurn,
   countPendingTurns,

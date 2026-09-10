@@ -12,11 +12,11 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { normalizeText, truncate } = require('./utils');
+const { dataDir } = require('./paths');
 
 const NL = String.fromCharCode(10);
-// 打包成 exe 后 __dirname 在只读快照里，数据必须落在 exe 旁边
-const APP_ROOT = typeof process.pkg !== 'undefined' ? path.dirname(process.execPath) : path.join(__dirname, '..');
-const DATA_DIR = path.join(APP_ROOT, 'data');
+// 数据目录：exe 旁边优先，不可写时回退用户目录（见 paths.js）
+const DATA_DIR = dataDir();
 const MEMORY_FILE = path.join(DATA_DIR, 'memory.json');
 
 const MEMORY_VERSION = 1;

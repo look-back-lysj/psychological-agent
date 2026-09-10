@@ -78,6 +78,32 @@ function buildStrategyBlock(strategyKey, reason, nextHint) {
 }
 
 /**
+ * 构建「本轮说话形态」段：由多智能体内核的「观」阶段产出。
+ * plan: { emotion, intensity, need, subtext, askQuestion }
+ * shape: { maxSentences, maxChars, empathyStrength, warmth }
+ */
+function buildPlanBlock(plan, shape) {
+  if (!plan && !shape) return '';
+  const p = plan || {};
+  const sh = shape || {};
+  const lines = ['【本轮的说话形态（内部参考，不要向对方提起）】'];
+  if (p.emotion) {
+    lines.push('- 你读到的：对方此刻偏「' + p.emotion + '」，强度 ' + (p.intensity || 3) + '/5。');
+  }
+  if (p.subtext) lines.push('- 他真正想说的可能是：' + p.subtext);
+  if (p.need) lines.push('- 他这次需要的更像：' + p.need + '。');
+  if (sh.maxSentences) lines.push('- 这次最多说 ' + sh.maxSentences + ' 句话，约 ' + (sh.maxChars || 120) + ' 字以内。');
+  lines.push(p.askQuestion
+    ? '- 可以用一个小问题收尾，但只问一个，且要容易回答。'
+    : '- 这次不要提问，先把话接住。');
+  if (sh.empathyStrength === 'high') lines.push('- 共情强度：高。先让对方感到被听见，不要急着推进。');
+  else if (sh.empathyStrength === 'low') lines.push('- 共情强度：适度即可，不用反复确认感受。');
+  if (sh.warmth === 'warm') lines.push('- 语气可以稍微亲近一点，但仍不使用亲昵称呼。');
+  else if (sh.warmth === 'reserved') lines.push('- 语气保持克制，先建立安全感。');
+  return lines.join(NL);
+}
+
+/**
  * 构建长期记忆段。memories 为字符串数组或 { text } 数组。
  */
 function buildMemoryBlock(memories) {
@@ -120,10 +146,13 @@ function buildSystemPrompt(opts) {
   const blocks = [
     buildPersonaBlock(),
     '',
-    buildStrategyBlock(strategyKey, o.reason, o.nextHint),
-    '',
-    buildSafetyBlock(riskLevel)
+    buildStrategyBlock(strategyKey, o.reason, o.nextHint)
   ];
+
+  const planBlock = buildPlanBlock(o.plan, o.shape);
+  if (planBlock) blocks.push('', planBlock);
+
+  blocks.push('', buildSafetyBlock(riskLevel));
 
   const memoryBlock = buildMemoryBlock(o.memories);
   if (memoryBlock) blocks.push('', memoryBlock);
@@ -150,5 +179,6 @@ module.exports = {
   STRATEGY_KEYS,
   buildStrategyBlock,
   buildMemoryBlock,
+  buildPlanBlock,
   buildSystemPrompt
 };

@@ -2,10 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const { hmacSessionId } = require('./utils');
 
-// 打包成 exe 后，快照目录只读，日志写到 exe 旁边的 logs/
-const LOG_DIR = typeof process.pkg !== 'undefined'
-  ? path.join(path.dirname(process.execPath), 'logs')
-  : process.env.LOG_DIR || path.join(__dirname, '..', 'logs');
+// 日志目录：支持 LOG_DIR 覆盖；打包后自动回退到可写目录（见 paths.js）
+const { logDir } = require('./paths');
+const LOG_DIR = process.env.LOG_DIR || logDir();
 
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });

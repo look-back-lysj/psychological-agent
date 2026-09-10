@@ -17,3 +17,8 @@ data/
 _tmp/
 .DS_Store
 Thumbs.db
+
+# Tauri 桌面版构建产物（源码保留，产物不入库）
+src-tauri/target/
+src-tauri/gen/
+src-tauri/binaries/

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>心屿</title>
+  <style>
+    :root {
+      --bg1: #eef2fb; --bg2: #e6f4f1; --ink: #1f2937; --muted: #64748b;
+      --accent1: #5b8def; --accent2: #4fd1c5;
+    }
+    html[data-theme="dark"] {
+      --bg1: #0f1419; --bg2: #121b22; --ink: #e5e7eb; --muted: #8b98a5;
+      --accent1: #6b9bf5; --accent2: #5ad6c9;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex; align-items: center; justify-content: center;
+      font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1000px 600px at 20% 10%, color-mix(in srgb, var(--accent1) 18%, transparent), transparent 60%),
+        radial-gradient(900px 600px at 85% 90%, color-mix(in srgb, var(--accent2) 16%, transparent), transparent 60%),
+        linear-gradient(160deg, var(--bg1), var(--bg2));
+      -webkit-user-select: none; user-select: none;
+      overflow: hidden;
+    }
+    .wrap { display: flex; flex-direction: column; align-items: center; gap: 22px; }
+    .mark {
+      width: 96px; height: 96px; border-radius: 30px;
+      background: linear-gradient(140deg, var(--accent1), var(--accent2));
+      display: grid; place-items: center;
+      box-shadow: 0 18px 50px color-mix(in srgb, var(--accent1) 38%, transparent);
+      animation: breathe 3.4s ease-in-out infinite;
+      position: relative;
+    }
+    .mark::after {
+      content: ""; position: absolute; inset: 0; border-radius: 30px;
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent2) 55%, transparent);
+      animation: halo 3.4s ease-out infinite;
+    }
+    .mark span { font-size: 44px; color: #fff; font-weight: 600; letter-spacing: 1px; }
+    .title { font-size: 22px; font-weight: 600; letter-spacing: 4px; }
+    .sub { font-size: 13px; color: var(--muted); letter-spacing: 1px; }
+    .dots { display: flex; gap: 7px; margin-top: 2px; }
+    .dots i {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--accent1);
+      opacity: .35; animation: pulse 1.25s ease-in-out infinite;
+    }
+    .dots i:nth-child(2) { animation-delay: .18s; background: color-mix(in srgb, var(--accent1) 60%, var(--accent2)); }
+    .dots i:nth-child(3) { animation-delay: .36s; background: var(--accent2); }
+    .hint { margin-top: 6px; font-size: 12px; color: var(--muted); min-height: 18px; }
+    @keyframes breathe { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-4px) scale(1.035); } }
+    @keyframes halo { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent2) 50%, transparent); } 70%,100% { box-shadow: 0 0 0 26px transparent; } }
+    @keyframes pulse { 0%,100% { opacity: .30; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-3px); } }
+    @media (prefers-reduced-motion: reduce) { .mark, .mark::after, .dots i { animation: none; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="mark"><span>屿</span></div>
+    <div class="title">心 屿</div>
+    <div class="sub">大学生情绪陪伴</div>
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div class="hint" id="hint">正在唤醒…</div>
+  </div>
+  <script>
+    // 跟随系统深浅色
+    try {
+      const dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    } catch (e) { /* 忽略 */ }
+
+    // 超过 6 秒还没跳转就给一句更具体的提示（后端首次启动要装依赖时会慢）
+    setTimeout(function () {
+      const h = document.getElementById('hint');
+      if (h) h.textContent = '首次启动准备中，稍等一下…';
+    }, 6000);
+    setTimeout(function () {
+      const h = document.getElementById('hint');
+      if (h) h.textContent = '还在准备。如果长时间没反应，请检查端口是否被占用。';
+    }, 20000);
+  </script>
+</body>
+</html>

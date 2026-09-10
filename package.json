@@ -9,7 +9,9 @@
     "start": "node main.js",
     "test": "node tests/run.js",
     "bundle": "node build.js",
-    "build": "node build.js && pkg main.js --targets node22-win-x64 --output dist/心屿/心屿.exe --compress GZip"
+    "build": "node build.js && pkg main.js --targets node22-win-x64 --output dist/心屿/心屿.exe --compress GZip",
+    "desktop": "node scripts/build-desktop.js",
+    "desktop:dev": "node scripts/build-desktop.js --dev"
   },
   "pkg": {
     "assets": [
@@ -22,6 +24,7 @@
     "express": "^5.2.1"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
     "@yao-pkg/pkg": "^6.22.0"
   }
 }

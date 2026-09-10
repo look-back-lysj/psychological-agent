@@ -9,7 +9,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { sanitizeText } = require('./utils');
 const {
-  ensureSession, addTurn, getHistory, getState, getRiskHistory,
+  ensureSession, addTurn, getHistory, getState, getRiskHistory, getInnerState,
   pushPendingTurn, countPendingTurns, drainPendingTurns
 } = require('./sessions');
 const { checkInputSafety, checkOutputSafety } = require('./safety');
@@ -18,6 +18,8 @@ const { buildSystemPrompt, PROMPT_VERSION } = require('./prompts');
 const { PERSONA_VERSION } = require('./persona');
 const { callLLM, callLLMStream, getConfig } = require('./llm');
 const memory = require('./memory');
+const { AGENT_VERSION, appraise, resolveStrategy, localScreen, review } = require('./agents');
+const { describeInnerState, updateInnerState, replyShape } = require('./innerstate');
 const { logCall } = require('./logger');
 
 const router = express.Router();
@@ -105,24 +107,54 @@ function buildMessages(history) {
  * 生成一次回复（非流式路径 / 流式路径共用）。
  */
 async function generateReply(ctx, { stream, onDelta, signal }) {
-  const { message, sessionId, inputSafety, decision, state } = ctx;
-  const cfg = getConfig();
+  const { message, sessionId, inputSafety, decision } = ctx;
+  const riskLevel = inputSafety.riskLevel;
 
   // 危机场景：固定话术，不交给模型自由生成
-  if (inputSafety.riskLevel === 'L3') {
+  if (riskLevel === 'L3') {
     const reply = (inputSafety.meta && inputSafety.meta.reply) || CRISIS_FALLBACK;
-    return { reply, usedModel: false, usage: null, blocked: false };
+    return { reply, usedModel: false, usage: null, blocked: false, agent: { version: AGENT_VERSION, mode: 'crisis_fixed' } };
   }
 
   const memories = collectMemories(message);
-  const systemPrompt = buildSystemPrompt({
+  const innerState = getInnerState(sessionId);
+
+  // 「观」：感知 + 定调（一次短调用；失败自动降级，不阻塞回复）
+  const plan = await appraise({
+    userText: message,
+    recentTurns: getHistory(sessionId).slice(-3),
     strategyKey: decision.key,
-    riskLevel: inputSafety.riskLevel,
+    riskLevel,
+    memories,
+    innerStateHint: describeInnerState(innerState)
+  });
+
+  // 策略裁决：规则层独占 S0/S6，模型只在 S1—S5 之间微调
+  const resolved = resolveStrategy(decision.key, plan);
+  const strategyKey = resolved.key;
+
+  // 内在状态更新 → 转成表达约束
+  updateInnerState(innerState, {
+    userEmotion: plan.emotion,
+    intensity: plan.intensity,
+    userText: message,
+    riskLevel
+  });
+  const shape = replyShape(innerState);
+
+  const systemPrompt = buildSystemPrompt({
+    strategyKey,
+    riskLevel,
     memories,
     reason: decision.reason,
-    nextHint: decision.nextHint
+    nextHint: decision.nextHint,
+    plan,
+    shape
   });
+  // 关键：当前这句话还没写进会话（在 finalizeTurn 才落库），必须显式追加，
+  // 否则模型看不到用户最新的一条消息。
   const history = buildMessages(getHistory(sessionId));
+  history.push({ role: 'user', text: message });
 
   let content = '';
   let usage = null;
@@ -136,11 +168,31 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
     usage = r.usage;
   }
 
+  // 「校」：本地快检发现问题才调用模型审校（省额度、保质量）
+  const issues = localScreen(content, plan, shape);
+  let critic = { triggered: false, issues, revised: false };
+  if (issues.length) {
+    const rv = await review({ userText: message, strategyKey, riskLevel }, content);
+    critic = { triggered: true, issues: issues.concat(rv.issues || []), revised: false, degraded: !!rv.degraded };
+    if (rv.revised) { content = rv.revised; critic.revised = true; }
+  }
+
+  const agent = {
+    version: AGENT_VERSION,
+    mode: 'multi_agent',
+    plan,
+    strategy_from: resolved.from,
+    strategy_resolved: strategyKey,
+    strategy_changed: resolved.changed,
+    shape,
+    critic
+  };
+
   const outputCheck = checkOutputSafety(content);
   if (outputCheck.blocked) {
-    return { reply: outputCheck.fallback, usedModel: true, usage, blocked: true, reason: outputCheck.reason };
+    return { reply: outputCheck.fallback, usedModel: true, usage, blocked: true, reason: outputCheck.reason, agent };
   }
-  return { reply: content, usedModel: true, usage, blocked: false };
+  return { reply: content, usedModel: true, usage, blocked: false, agent };
 }
 
 /**
@@ -149,6 +201,7 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
 function finalizeTurn(ctx, result, t0) {
   const { message, sessionId, inputSafety, decision, state, route, explicit } = ctx;
   updateSessionState(state, decision, inputSafety.riskLevel);
+  if (result.agent && ctx.route) ctx.route.agent = result.agent;
   addTurn(sessionId, 'user', message, { riskLevel: inputSafety.riskLevel, strategy: decision.key });
   addTurn(sessionId, 'assistant', result.reply, {
     riskLevel: inputSafety.riskLevel,
@@ -194,6 +247,7 @@ function successPayload(ctx, result) {
     sessionId: ctx.sessionId,
     requestId: ctx.requestId,
     blocked: !!result.blocked,
+    agent: result.agent || null,
     memory: ctx.explicit ? { action: ctx.explicit.type, item: (ctx.explicit.item && ctx.explicit.item.text) || null } : null
   };
 }
@@ -340,6 +394,7 @@ router.post('/stream', async (req, res) => {
       route: ctx.route,
       sessionId: ctx.sessionId,
       blocked: !!result.blocked,
+      agent: result.agent || null,
       memory: ctx.explicit ? { action: ctx.explicit.type, item: (ctx.explicit.item && ctx.explicit.item.text) || null } : null
     });
   } catch (e) {

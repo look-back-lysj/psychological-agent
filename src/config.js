@@ -1,11 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const { dataDir } = require('./paths');
 
 // 配置文件固定为 data/config.json（data/ 已在 .gitignore，绝不入库）
 // 打包成 exe 后快照目录只读，与 main.js / logger.js 保持一致，写到 exe 旁边
-const isPkg = typeof process.pkg !== 'undefined';
-const APP_ROOT = isPkg ? path.dirname(process.execPath) : path.join(__dirname, '..');
-const CONFIG_DIR = path.join(APP_ROOT, 'data');
+const CONFIG_DIR = dataDir();
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
 // 默认值：DeepSeek 官方（api-docs.deepseek.com，2026-09-10 核实）
