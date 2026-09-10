@@ -4,15 +4,29 @@
 
 ## 界面预览
 
-| 首页 | 普通对话（含策略 / 风险标签） |
+| 首页 | 对话（流式回复 + 策略 / 风险标签） |
 | --- | --- |
-| ![首页](docs/screenshots/ui-01-home.png) | ![普通对话](docs/screenshots/ui-02-chat.png) |
+| ![首页](docs/screenshots/ui-01-home.png) | ![对话](docs/screenshots/ui-02-chat.png) |
 
-高风险输入会自动进入「安全优先」分支：
+| 高风险 → 安全优先分支 | 深色模式 |
+| --- | --- |
+| ![安全优先](docs/screenshots/ui-03-safety.png) | ![深色模式](docs/screenshots/ui-04-dark.png) |
 
-![安全优先分支](docs/screenshots/ui-03-safety.png)
+移动端自适应：
 
-> 截图为打包后程序的实际运行效果。未配置模型密钥时，普通对话会返回兜底回复；配置 `.env` 后即为真实模型回答。
+<img src="docs/screenshots/ui-05-mobile.png" alt="移动端" width="300" />
+
+> 截图均为打包后程序的实际运行效果（对接本地 mock 模型）。未配置模型密钥时，普通对话会返回兜底回复。
+
+## 功能特性
+
+- **先判断沟通策略**：低压力陪伴 / 共情 / 温和澄清 / 一起想办法 / 安全优先；每条回答下方显示本次策略与风险等级。
+- **安全优先分支**：识别到明确安全风险时暂停普通陪伴，给出联系现实支持的引导。
+- **流式回复**：逐字输出（SSE）；服务端**先做输出安全检查再下发**，并保留尾部缓冲，避免越界内容闪现。
+- **多会话管理**：会话列表、自动命名、删除、本地持久化（仅存于浏览器）。
+- **安全 Markdown**：粗体 / 列表 / 代码 / 引用 / 链接（仅 http/https），全程 HTML 转义。
+- **细节体验**：深 / 浅色主题、移动端自适应、输入框自动增高、Enter 发送、复制 / 重试、回到最新、免责声明弹窗。
+- **优雅降级**：流式失败自动回退到普通接口；模型未配置时返回友好兜底而不是报错。
 
 ## 快速开始
 
@@ -85,6 +99,26 @@ npm run build
 | 调通 API 并完成场景测试 | 测试脚本与评测记录 |
 | 请两位同学试用 | 试用反馈文档 |
 | 提交 GitHub 仓库 | README、文档、日志 |
+
+## 接口约定
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/health` | 服务状态与当前模型名 |
+| POST | `/api/chat` | 非流式聊天，返回 `{ ok, data: { reply, strategy, riskLevel, sessionId } }` |
+| POST | `/api/chat/stream` | 流式聊天（SSE），请求体同为 `{ message, sessionId }` |
+
+`/api/chat/stream` 事件序列：
+
+```text
+event: meta     data: { sessionId, requestId, strategy, riskLevel }
+event: delta    data: { text }                    # 增量文本，可出现多次
+event: replace  data: { reply, blocked, reason }  # 输出被安全拦截时整体替换
+event: error    data: { message }                 # 模型未配置或调用失败
+event: done     data: { reply, strategy, riskLevel, sessionId, blocked }
+```
+
+> 服务端在输出前完成安全检查（并保留尾部缓冲），命中越界内容时改发 `replace` 兜底文案。
 
 ## 环境变量
 

@@ -1,33 +1,145 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#5b8def" />
+  <meta name="description" content="心屿 · 面向大学生的非诊疗情绪陪伴助手" />
   <title>心屿 · 大学生情绪陪伴助手</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%235b8def'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23fff'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <main class="container">
-    <header>
-      <h1>心屿</h1>
-      <p class="subtitle">面向大学生学习压力和日常情绪困扰的非诊疗陪伴助手</p>
-      <p class="notice">重要提醒：这是一个实验性原型，不能代替心理咨询，也不能在危机时提供专业支持。</p>
-    </header>
+  <svg class="svg-defs" aria-hidden="true" focusable="false">
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" /></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 11.5 20 4l-7.5 16-2-6.5z" /></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.6" y="6.6" width="10.8" height="10.8" rx="2.2" /></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" /></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.2" /><path d="M12 2v2.6M12 19.4V22M2 12h2.6M19.4 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8" /></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 11v5.5M12 7.6v.4" /></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2.4" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></symbol>
+    <symbol id="i-retry" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.4-5.7" /><path d="M20 4v4h-4" /></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M7 7l1 12.5h8L17 7" /></symbol>
+    <symbol id="i-arrow-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6" /></symbol>
+  </svg>
 
-    <section class="chat-box">
-      <div id="messages" class="messages"></div>
-      <form id="chat-form" class="input-row">
-        <input id="message" type="text" placeholder="输入你想说的话，例如：最近考试压力很大" autocomplete="off" />
-        <button type="submit">发送</button>
-        <button type="button" id="new-chat" class="secondary">新对话</button>
-      </form>
-      <div class="foot-note">当前为会话内记忆，关闭或新对话后不会保留记录。</div>
-    </section>
+  <div class="app" id="app">
+    <!-- 侧边栏 -->
+    <aside class="sidebar" id="sidebar" aria-label="会话列表">
+      <div class="sidebar__head">
+        <div class="brand">
+          <span class="brand__mark" aria-hidden="true"></span>
+          <span class="brand__name">心屿</span>
+        </div>
+        <button class="icon-btn sidebar__close" id="sidebar-close" type="button" aria-label="收起侧边栏">
+          <svg class="icon"><use href="#i-close" /></svg>
+        </button>
+      </div>
 
-    <footer>
-      <p>技术向原型 · 面向课程作品使用</p>
-    </footer>
-  </main>
+      <button class="btn btn--primary btn--block" id="new-chat" type="button">
+        <svg class="icon"><use href="#i-plus" /></svg><span>开始新对话</span>
+      </button>
+
+      <nav class="sessions" aria-label="历史会话">
+        <p class="sessions__label">最近对话</p>
+        <ul class="session-list" id="session-list"></ul>
+        <p class="sessions__empty" id="sessions-empty">还没有其他对话</p>
+      </nav>
+
+      <div class="sidebar__foot">
+        <button class="ghost-btn" id="theme-toggle" type="button">
+          <svg class="icon" id="theme-icon"><use href="#i-moon" /></svg>
+          <span id="theme-text">深色模式</span>
+        </button>
+        <button class="ghost-btn" id="open-about" type="button">
+          <svg class="icon"><use href="#i-info" /></svg><span>关于与免责声明</span>
+        </button>
+        <p class="sidebar__meta"><span class="dot" id="model-dot"></span><span id="model-pill">模型检测中…</span></p>
+      </div>
+    </aside>
+
+    <!-- 主区域 -->
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-btn topbar__menu" id="sidebar-open" type="button" aria-label="展开侧边栏">
+          <svg class="icon"><use href="#i-menu" /></svg>
+        </button>
+        <div class="topbar__title">
+          <h1 id="chat-title">新的对话</h1>
+          <p id="chat-subtitle">非诊疗情绪陪伴 · 记录只保存在本机浏览器</p>
+        </div>
+        <div class="topbar__actions">
+          <span class="pill" id="status-pill" data-state="loading">连接中…</span>
+        </div>
+      </header>
+
+      <section class="chat" id="chat" aria-label="对话内容">
+        <div class="messages" id="messages"></div>
+
+        <div class="welcome" id="welcome">
+          <div class="welcome__inner">
+            <div class="welcome__mark" aria-hidden="true">屿</div>
+            <h2 class="welcome__title">你好，我在这里</h2>
+            <p class="welcome__desc">我是一个非诊疗的情绪陪伴助手。<br />可以聊聊最近的压力、心情，或者只是想找个人说说话。</p>
+            <div class="suggestions" id="suggestions">
+              <button class="suggestion" type="button" data-prompt="最近考试压力很大，晚上一直失眠">最近考试压力很大，晚上一直失眠</button>
+              <button class="suggestion" type="button" data-prompt="我也不知道为什么，最近就是乱糟糟的">说不清原因，就是乱糟糟的</button>
+              <button class="suggestion" type="button" data-prompt="算了，没什么，不想说了">算了，没什么</button>
+              <button class="suggestion" type="button" data-prompt="我该怎么调整自己的状态？">想问问怎么调整状态</button>
+            </div>
+            <p class="welcome__notice">我不是心理咨询师，也不能在危机时提供专业支持。如有紧急情况，请立即联系身边可信任的人、学校心理中心或当地紧急服务。</p>
+          </div>
+        </div>
+
+        <button class="scroll-bottom" id="scroll-bottom" type="button" aria-label="回到最新消息" hidden>
+          <svg class="icon"><use href="#i-arrow-down" /></svg>
+        </button>
+      </section>
+
+      <footer class="composer">
+        <form class="composer__form" id="chat-form">
+          <textarea id="message" rows="1" placeholder="说说现在的感受…" autocomplete="off" aria-label="输入消息"></textarea>
+          <button class="send-btn" id="send-btn" type="submit" aria-label="发送消息" disabled>
+            <svg class="icon"><use href="#i-send" /></svg>
+          </button>
+        </form>
+        <p class="composer__hint"><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行 · 内容仅存于本机</p>
+      </footer>
+    </main>
+  </div>
+
+  <div class="scrim" id="scrim" hidden></div>
+
+  <dialog class="modal" id="about-modal" aria-labelledby="about-title">
+    <div class="modal__head">
+      <h2 id="about-title">关于心屿</h2>
+      <button class="icon-btn" id="about-close" type="button" aria-label="关闭">
+        <svg class="icon"><use href="#i-close" /></svg>
+      </button>
+    </div>
+    <div class="modal__body">
+      <p><strong>心屿</strong>是一个面向大学生日常学习压力、情绪低落和表达困难场景的<strong>非诊疗</strong>情绪陪伴原型。</p>
+      <h3>它会做什么</h3>
+      <ul>
+        <li>先判断你此刻更需要哪种沟通方式（陪伴、共情、澄清或一起想办法）；</li>
+        <li>遇到明确的安全风险时，优先引导你联系现实中的支持资源。</li>
+      </ul>
+      <h3>它不会做什么</h3>
+      <ul>
+        <li>不做心理诊断，不开药，不提供任何危险行为的方式；</li>
+        <li>不承诺绝对保密，也不会假装已经替你联系他人；</li>
+        <li>不能替代心理咨询，也不能在危机时提供专业支持。</li>
+      </ul>
+      <h3>隐私</h3>
+      <p>对话记录只保存在你的浏览器本地；发送的消息会转发给所配置的模型服务用于生成回复。</p>
+      <p class="modal__warn">如果你正处于危机中，请立即联系身边可信任的人、学校心理中心，或拨打当地紧急服务电话。</p>
+    </div>
+  </dialog>
+
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
   <script src="app.js"></script>
 </body>
 </html>

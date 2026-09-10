@@ -46,7 +46,7 @@ const OUTPUT_BLOCK_RE = /(你得了|你确诊|你属于|我替你报警|已经�
 function checkOutputSafety(text) {
   if (!text) return { blocked: true, reason: 'empty_output', fallback: '我现在回答得不太好。我们先缓一缓，我陪你慢慢说。' };
   if (text.length > 1800) return { blocked: true, reason: 'too_long', fallback: '我刚才说得太长了。我们先把话题缩小一点，你最想先聊哪一件事？' };
-  if (OUTPUT_BLOCK_RE.test(text)) return { blocked: true, reason: 'blocked_content', fallback: '我不能给出诊断、危险建议或绝对保密承诺。我们可以继续围绕你的感受和当前压力聊，也可以一起想想现在最现实、最安全的小步骤。' };
+  if (OUTPUT_BLOCK_RE.test(normalizeText(text))) return { blocked: true, reason: 'blocked_content', fallback: '我不能给出诊断、危险建议或绝对保密承诺。我们可以继续围绕你的感受和当前压力聊，也可以一起想想现在最现实、最安全的小步骤。' };
   return { blocked: false, reason: 'ok', fallback: '' };
 }
 
