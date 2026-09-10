@@ -1,22 +1,4 @@
-const path = require('path');
-const express = require('express');
-const dotenv = require('dotenv');
-const chatRoute = require('./chat');
-
-dotenv.config();
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-const publicDir = path.join(__dirname, '..', 'public');
-
-app.use(express.json({ limit: '1mb' }));
-app.use(express.static(publicDir));
-app.use('/api/chat', chatRoute);
-
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true, time: new Date().toISOString(), model: process.env.LLM_MODEL || '未配置' });
-});
-
-app.listen(PORT, () => {
-  console.log(`心屿服务已启动：http://localhost:${PORT}`);
-});
+// 兼容入口：为避免两套初始化逻辑分叉，统一交由根目录的 main.js 启动。
+// 直接运行：node src/index.js（等价于 node main.js）
+// 若不希望自动打开浏览器，可设置环境变量 NO_BROWSER=1。
+require('../main.js');

@@ -1,0 +1,40 @@
+# 开发日志 - 第 3 天
+
+## 目标
+
+- 收尾「一键启动 / 打包分发」改造；
+- 清理仓库卫生，避免构建产物与运行日志入库；
+- 统一程序入口，消除重复初始化逻辑。
+
+## 完成内容
+
+- 统一入口：`main.js` 作为唯一入口，删除冗余的 `launcher.js`；
+  `src/index.js` 改为薄别名，直接 `require('../main.js')`，避免两套初始化逻辑分叉。
+- 修复 `main.js` 中的死代码（`isPkg ? require(...) : require(...)` 两个分支相同）。
+- 新增 `NO_BROWSER=1` 开关：服务器/测试环境可禁止启动时自动打开浏览器。
+- `src/logger.js` 支持打包模式：exe 运行时日志写到 exe 旁边的 `logs/`，不再写入只读快照目录。
+- 打包链路跑通：
+  - `npm run bundle` 生成 `dist/心屿/`，并内置**生产依赖**，使发布包可离线运行；
+  - `npm run build` 在 bundle 基础上生成免安装 `dist/心屿/心屿.exe`。
+- 打包目标从 `node20-win-x64` 改为 `node22-win-x64`：
+  当前 pkg-fetch（v3.6）只提供 node22/24/26 预编译基座，node20 会回退源码编译并失败。
+- 仓库卫生：
+  - `.gitignore` 增加 `dist/`、`*.zip`、`*.exe`；
+  - 将 `dist/` 与 `心屿.zip` 从版本库移除（本地文件保留）；
+  - 打包不再复制真实运行日志，只附带脱敏样例 `samples/calls.sample.jsonl`。
+- 移除 `src/llm.js` 中硬编码的实验室临时模型名，模型统一由 `.env` 的 `LLM_MODEL` 提供。
+- 更新 README：目录结构、打包与分发方式、`NO_BROWSER` 说明。
+
+## 验收
+
+- `npm test`：9/9 通过；
+- `npm run build`：成功生成 exe（约 56 MB）；
+- exe 冒烟测试：`/api/health`、首页、`app.js` 正常；高风险输入进入安全分支；日志正确落盘到 exe 旁边；
+- 发布 zip：约 0.9 MB，解压后**不执行 npm install** 即可用 `node main.js` 启动；
+- 安全扫描：仓库内无 `.env`、无明文凭据，构建产物未入库。
+
+## 待办
+
+- 接入真实实验室 API，生成真实调用记录；
+- 完成两位同学试用并回收结构化反馈；
+- 用真实调用记录更新评测报告。

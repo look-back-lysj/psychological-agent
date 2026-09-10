@@ -2,27 +2,26 @@
   "name": "psych-companion",
   "version": "1.0.0",
   "private": true,
+  "license": "UNLICENSED",
   "description": "心屿 · 大学生情绪陪伴智能体",
+  "main": "main.js",
   "scripts": {
-    "start": "node src/index.js",
+    "start": "node main.js",
     "test": "node tests/run.js",
-    "build": "node build.js"
+    "bundle": "node build.js",
+    "build": "node build.js && pkg main.js --targets node22-win-x64 --output dist/心屿/心屿.exe --compress GZip"
   },
   "pkg": {
     "assets": [
-      "public/**/*",
-      "src/**/*.js",
-      "node_modules/**/*"
+      "public/**/*"
     ],
-    "outputPath": "dist",
-    "targets": [
-      "node18-win-x64"
-    ]
+    "outputPath": "dist"
   },
-  "license": "UNLICENSED",
   "dependencies": {
     "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "node-fetch": "^3.3.2"
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.22.0"
   }
 }

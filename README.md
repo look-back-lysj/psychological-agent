@@ -19,6 +19,39 @@
    ```
 5. 打开：http://localhost:3000
 
+> 服务入口是根目录的 `main.js`（会自动加载 `.env`、启动 Express，并在本机自动打开浏览器）。
+> `src/index.js` 为兼容入口，等价于 `node main.js`。
+> 在服务器或测试环境可设置 `NO_BROWSER=1` 禁止自动打开浏览器。
+
+## 目录结构
+
+```text
+main.js          服务入口
+src/             核心模块（chat / safety / strategy / prompts / llm / sessions / logger / utils）
+public/          前端页面
+tests/           自动化测试（9 条策略与安全用例）
+samples/         脱敏后的调用记录样例
+docs/            设计、评测、竞品调研、日程与试用模板
+devlog/          开发日志
+```
+
+## 打包与分发
+
+```bash
+# 生成发布目录 dist/心屿/（内置离线生产依赖）
+npm run bundle
+
+# 生成免安装 exe（Windows，无需本机安装 Node.js）
+npm run build
+```
+
+发布方式二选一：
+
+1. 解压 `心屿.zip`，双击 `启动心屿.bat`（需本机已装 Node.js；依赖已内置，可离线运行）；
+2. 直接运行 `dist/心屿/心屿.exe`（免安装 Node.js）。
+
+> 构建产物 `dist/`、`心屿.zip`、`*.exe` 已由 `.gitignore` 排除，请勿提交到仓库。
+
 ## 这个项目解决什么问题
 
 不是做一个普通聊天壳，而是做一个**会先判断沟通策略**的对话系统。
@@ -51,7 +84,10 @@ LLM_MODEL=你的模型名称
 LLM_API_KEY=your_api_key_here
 PORT=3000
 LOG_SALT=请用随机长字符串填写
+NO_BROWSER=0
 ```
+
+> `.env` 只放本地，`git` 不会跟踪；`.env.example` 是不含任何真实凭据的模板。
 
 ## 重要提示
 

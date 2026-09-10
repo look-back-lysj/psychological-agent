@@ -2,7 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { hmacSessionId } = require('./utils');
 
-const LOG_DIR = path.join(__dirname, '..', 'logs');
+// 打包成 exe 后，快照目录只读，日志写到 exe 旁边的 logs/
+const LOG_DIR = typeof process.pkg !== 'undefined'
+  ? path.join(path.dirname(process.execPath), 'logs')
+  : process.env.LOG_DIR || path.join(__dirname, '..', 'logs');
 
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
