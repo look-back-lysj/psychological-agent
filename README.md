@@ -62,11 +62,14 @@ npm start
 
 不想看到浏览器地址栏、想要一个真正的桌面应用，可以直接用 Tauri 外壳：
 
-| 形态 | 位置 | 说明 |
+| 形态 | 下载 | 说明 |
 | --- | --- | --- |
-| **在线下载** | [Release v2.1.0](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases/tag/v2.1.0) | 约 17 MB，**当前用户安装，不需要管理员权限** |
-| 本地产物 | `dist/守岸人_2.1.0_x64-setup.exe` | 与在线版本一致 |
-| 便携版 | `dist/守岸人桌面版/` | 双击 `守岸人.exe` 即可，绿色免安装 |
+| **桌面安装包** | [`shouanren-2.1.0-x64-setup.exe`](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases/download/v2.1.0/shouanren-2.1.0-x64-setup.exe) | 约 17 MB，**当前用户安装，免管理员**，带开始菜单与卸载项 |
+| **免安装 Node 版** | [`shouanren-2.1.0-node.zip`](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases/download/v2.1.0/shouanren-2.1.0-node.zip) | 约 4 MB，解压后双击 `启动守岸人.bat`（需本机有 Node.js，依赖已内置） |
+| 本地：便携版 | `dist/守岸人桌面版/` | 双击 `守岸人.exe`，绿色免安装（推荐） |
+| 本地：安装包 | `dist/守岸人_2.1.0_x64-setup.exe` | 与在线版本一致 |
+
+> 全部版本见 [Releases 页面](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases)。
 
 桌面版做了什么：
 
