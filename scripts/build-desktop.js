@@ -29,8 +29,8 @@ const checkOnly = args.includes('--check');
 const tIdx = args.indexOf('--target');
 const TARGET = tIdx !== -1 ? args[tIdx + 1] : 'x86_64-pc-windows-gnu';
 
-const BACKEND_EXE = path.join(ROOT, 'dist', '心屿', '心屿.exe');
 const PRODUCT_NAME = '守岸人';
+const BACKEND_EXE = path.join(ROOT, 'dist', PRODUCT_NAME, PRODUCT_NAME + '.exe');
 const OUT_PORTABLE = path.join(ROOT, 'dist', PRODUCT_NAME + '桌面版');
 
 /** 路径里是否有非 ASCII 字符（含中文） */

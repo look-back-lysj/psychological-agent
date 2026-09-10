@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DIST = path.join(__dirname, 'dist', '心屿');
+const DIST = path.join(__dirname, 'dist', '守岸人');
 const PUBLIC = path.join(__dirname, 'public');
 const SRC = path.join(__dirname, 'src');
 const TESTS = path.join(__dirname, 'tests');
@@ -20,7 +20,7 @@ function copyDir(from, to) {
   }
 }
 
-// 只清理 dist/心屿，保留 dist/ 下的其它产物（例如 exe）
+// 只清理 dist/守岸人，保留 dist/ 下的其它产物（例如 exe）
 if (fs.existsSync(DIST)) fs.rmSync(DIST, { recursive: true, force: true });
 mkdirp(DIST);
 
@@ -50,11 +50,11 @@ for (const f of ['submit-checklist.md']) {
 // 写启动脚本
 const bat = `@echo off
 chcp 65001 >nul 2>&1
-title 心屿 · 大学生情绪陪伴助手
+title 守岸人 · 情绪陪伴
 
 echo.
 echo   ========================================
-echo   心屿 · 大学生情绪陪伴助手
+echo   守岸人 · 情绪陪伴
 echo   ========================================
 echo.
 
@@ -94,12 +94,12 @@ node main.js
 pause
 `;
 
-fs.writeFileSync(path.join(DIST, '启动心屿.bat'), bat, 'utf8');
+fs.writeFileSync(path.join(DIST, '启动守岸人.bat'), bat, 'utf8');
 
 // 写测试脚本
 const testBat = `@echo off
 chcp 65001 >nul 2>&1
-title 心屿 - 运行测试
+title 守岸人 - 运行测试
 echo.
 echo 正在运行测试...
 echo.
