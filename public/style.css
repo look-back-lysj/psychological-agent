@@ -4395,3 +4395,143 @@ html[data-theme="dark"] ::selection {
   }
 }
 
+
+
+/* =======================================================================
+   18.12 记忆透明度 · 键盘快捷键 · 无障碍工具类
+   -----------------------------------------------------------------------
+   - .msg__used   ：回复下方的「用到了：…」，小号 / faint / hover 才明显
+   - .mem-tag--recent：记忆面板里「最近用过」的淡淡标记
+   - .shortcuts__*：复用 dialog.modal 体系的快捷键帮助
+   - .sr-only     ：视觉隐藏但读屏可见
+   ======================================================================= */
+
+/* 视觉隐藏但读屏可见（不要用 display:none） */
+.sr-only {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+}
+
+/* ── 「用到了」：非常轻，hover / 键盘聚焦时才明显 ───────────────────── */
+.msg__used {
+  display: block; /* 行内流：标签与条目在同一行自然折行，读起来就是一句话 */
+  max-width: 100%;
+  padding: 0 var(--sp-1);
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.7;
+  opacity: 0.9; /* 默认就已经很轻；hover / 聚焦时再加深，不喧宾夺主 */
+  transition: opacity var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.msg__used-label,
+.msg__used-sep,
+.msg__used-more {
+  color: inherit;
+}
+
+.msg__used-item {
+  max-width: 100%;
+  padding: 0 3px;
+  border-radius: var(--r-xs);
+  color: inherit;
+  overflow-wrap: anywhere;
+  transition: color var(--dur) var(--ease), background-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+.msg--assistant:hover .msg__used,
+.msg__used:hover,
+.msg__used:focus-within {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+.msg__used-item:hover,
+.msg__used-item:focus-visible {
+  background: var(--surface-2);
+  color: var(--text-soft);
+  outline: none;
+}
+
+.msg__used-item:focus-visible {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--focus);
+}
+
+/* 触摸设备没有 hover：保持可直接看清 */
+@media (hover: none) {
+  .msg__used {
+    opacity: 1;
+  }
+}
+
+/* ── 记忆面板：最近用过的条目 ────────────────────────────────────────── */
+.mem-tag--recent {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* ── 键盘快捷键帮助（复用 dialog.modal 视觉体系） ───────────────────── */
+.modal--shortcuts {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.modal__body .shortcuts__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.modal__body .shortcuts__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: 8px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.modal__body .shortcuts__row:last-child {
+  border-bottom: 0;
+}
+
+.modal__body .shortcuts__row::before {
+  content: none;
+  display: none;
+}
+
+.shortcuts__keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  color: var(--text-soft);
+}
+
+.shortcuts__desc {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  text-align: right;
+}
+
+/* ── 无障碍：新元素同样尊重「减少动效」 ─────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .msg__used,
+  .msg__used-item {
+    transition: none !important;
+  }
+}

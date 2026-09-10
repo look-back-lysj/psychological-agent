@@ -85,11 +85,14 @@
       </nav>
 
       <div class="sidebar__foot">
-        <button class="ghost-btn" id="open-settings" type="button">
+        <button class="ghost-btn" id="open-settings" type="button" aria-expanded="false">
           <svg class="icon"><use href="#i-settings" /></svg><span>模型设置</span>
         </button>
-        <button class="ghost-btn" id="open-memory" type="button">
+        <button class="ghost-btn" id="open-memory" type="button" aria-expanded="false">
           <svg class="icon"><use href="#i-memory" /></svg><span>长期记忆</span>
+        </button>
+        <button class="ghost-btn" id="open-shortcuts" type="button" aria-expanded="false">
+          <svg class="icon"><use href="#i-key" /></svg><span>键盘快捷键</span>
         </button>
         <button class="ghost-btn" id="theme-toggle" type="button">
           <svg class="icon" id="theme-icon"><use href="#i-moon" /></svg>
@@ -105,7 +108,7 @@
     <!-- 主区域 -->
     <main class="main">
       <header class="topbar">
-        <button class="icon-btn topbar__menu" id="sidebar-open" type="button" aria-label="展开侧边栏">
+        <button class="icon-btn topbar__menu" id="sidebar-open" type="button" aria-label="展开侧边栏" aria-expanded="false">
           <svg class="icon"><use href="#i-menu" /></svg>
         </button>
         <div class="topbar__title">
@@ -117,7 +120,7 @@
           <button class="icon-btn is-compact" id="debug-toggle" type="button" aria-pressed="false" aria-label="调试面板开关" title="调试面板（显示策略路由）">
             <svg class="icon"><use href="#i-debug" /></svg>
           </button>
-          <button class="icon-btn is-compact" id="open-settings-top" type="button" aria-label="打开设置" title="模型设置">
+          <button class="icon-btn is-compact" id="open-settings-top" type="button" aria-label="打开设置" title="模型设置" aria-expanded="false">
             <svg class="icon"><use href="#i-settings" /></svg>
           </button>
           <span class="pill" id="status-pill" data-state="loading">连接中…</span>
@@ -126,6 +129,7 @@
 
       <section class="chat" id="chat" aria-label="对话内容">
         <div class="messages" id="messages"></div>
+        <div id="sr-live" class="sr-only" aria-live="polite"></div>
 
         <div class="welcome" id="welcome">
           <div class="welcome__inner">
@@ -169,7 +173,7 @@
             <svg class="icon"><use href="#i-send" /></svg>
           </button>
         </form>
-        <p class="composer__hint"><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行 · 内容仅存于本机</p>
+        <p class="composer__hint"><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行 · <kbd>?</kbd> 快捷键 · 内容仅存于本机</p>
       </footer>
     </main>
   </div>
@@ -397,6 +401,26 @@
       <button class="btn btn--danger" id="memory-clear" type="button">清空全部记忆</button>
     </footer>
   </aside>
+
+  <!-- 键盘快捷键帮助（复用 dialog/modal 样式体系） -->
+  <dialog class="modal modal--shortcuts" id="shortcuts-modal" aria-labelledby="shortcuts-title">
+    <div class="modal__head">
+      <h2 id="shortcuts-title">键盘快捷键</h2>
+      <button class="icon-btn" id="shortcuts-close" type="button" aria-label="关闭">
+        <svg class="icon"><use href="#i-close" /></svg>
+      </button>
+    </div>
+    <div class="modal__body">
+      <ul class="shortcuts__list">
+        <li class="shortcuts__row"><span class="shortcuts__keys"><kbd>Enter</kbd></span><span class="shortcuts__desc">发送消息</span></li>
+        <li class="shortcuts__row"><span class="shortcuts__keys"><kbd>Shift</kbd>+<kbd>Enter</kbd></span><span class="shortcuts__desc">换行</span></li>
+        <li class="shortcuts__row"><span class="shortcuts__keys"><kbd>Esc</kbd></span><span class="shortcuts__desc">关闭面板</span></li>
+        <li class="shortcuts__row"><span class="shortcuts__keys"><kbd>Ctrl</kbd>/<kbd>Cmd</kbd>+<kbd>K</kbd></span><span class="shortcuts__desc">新建对话</span></li>
+        <li class="shortcuts__row"><span class="shortcuts__keys"><kbd>?</kbd></span><span class="shortcuts__desc">显示本帮助</span></li>
+        <li class="shortcuts__row"><span class="shortcuts__keys"><kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd></span><span class="shortcuts__desc">在抽屉内循环焦点</span></li>
+      </ul>
+    </div>
+  </dialog>
 
   <!-- 二次确认弹窗（不使用原生 confirm，避免阻塞页面） -->
   <dialog class="modal modal--confirm" id="confirm-modal" aria-labelledby="confirm-title">

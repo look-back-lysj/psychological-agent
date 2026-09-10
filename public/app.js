@@ -102,6 +102,11 @@
   const NET_TIMEOUT_TOAST = '连接超时了，稍后再试试';
   const CONFIG_SAVED_TOAST = '设置已保存';
   const MEMORY_SAVED_TOAST = '已添加一条记忆';
+  const STORAGE_FAIL_TOAST = '本机记录保存失败，聊天仍可继续';
+  const STORAGE_CORRUPT_TOAST = '本机记录已损坏，已重置';
+  const CORRUPT_KEY_PREFIX = 'psych.sessions.corrupt.';
+  const USED_MEMORY_SHOW = 2;  // 「用到了」最多展示 2 条，其余折叠为「等 N 条」
+  const SR_LIVE_MAX = 200;     // 读屏播报截断长度
 
   // 情感连续性（GET /api/comeback）与免 Key 演示模式（GET/POST /api/demo）
   const COMEBACK_TIMEOUT_MS = 3000;
@@ -164,6 +169,7 @@
     statusPill: $('status-pill'),
     chat: $('chat'),
     messages: $('messages'),
+    srLive: $('sr-live'),
     welcome: $('welcome'),
     suggestions: $('suggestions'),
     heroTitle: $('hero-title'),
@@ -192,6 +198,7 @@
     openSettingsTop: $('open-settings-top'),
     openSettings: $('open-settings'),
     openMemory: $('open-memory'),
+    openShortcuts: $('open-shortcuts'),
 
     // 首次启动向导
     wizard: $('wizard'),
@@ -241,6 +248,10 @@
     memoryClear: $('memory-clear'),
     memoryFootNote: $('memory-foot-note'),
 
+    // 键盘快捷键帮助
+    shortcutsModal: $('shortcuts-modal'),
+    shortcutsClose: $('shortcuts-close'),
+
     // 二次确认弹窗
     confirmModal: $('confirm-modal'),
     confirmTitle: $('confirm-title'),
@@ -287,6 +298,11 @@
   let demoCapable = false;     // /api/demo 是否可用（接口存在或 comeback 声明可用）
   let demoEnabled = false;     // 演示模式当前是否开启
   let demoBusy = false;        // 演示模式切换 / 自动关闭进行中
+  let storageWarned = false;   // 本机写入失败是否已提示（同一次会话只提示一次）
+  let drawerReturnFocus = null;    // 关闭抽屉后归还焦点的元素
+  let sidebarReturnFocus = null;   // 关闭侧边栏后归还焦点的元素
+  let shortcutsReturnFocus = null; // 关闭快捷键帮助后归还焦点的元素
+  let demoApplied = null;      // 上次同步「用到了」显隐时的演示模式状态
 
   /* ============================================================
    * 四、通用工具
@@ -364,6 +380,149 @@
     if (!node) return;
     node.hidden = !!hidden;
     node.style.display = hidden ? 'none' : '';
+  }
+
+  /* ============================================================
+   * 三之二、无障碍：隐藏容器的焦点隔离（inert + 老浏览器降级）
+   * ------------------------------------------------------------
+   * 支持 inert 时优先用 inert；不支持时降级为 aria-hidden="true"
+   * 并把容器内可聚焦元素临时改为 tabindex="-1"（关闭时还原）。
+   * ============================================================ */
+
+  const supportsInert = (function () {
+    try { return 'inert' in HTMLElement.prototype; } catch (e) { return false; }
+  })();
+
+  const tabindexBackup = new WeakMap(); // 元素 -> 原始 tabindex（降级方案用）
+  const hiddenLayers = new Set();       // 当前被标记为「不可见」的容器
+
+  const TABBABLE_SELECTOR = 'a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])';
+  const FOCUSABLE_SELECTOR = 'a[href], button, input, select, textarea, summary, [tabindex]';
+
+  function isVisibleNode(node) {
+    if (!node || node.hidden || node.disabled) return false;
+    try { if (node.closest('[hidden]')) return false; } catch (e) { /* 忽略 */ }
+    return true;
+  }
+
+  // 容器内当前可 Tab 到的元素（按 DOM 顺序）
+  function collectFocusable(root) {
+    const out = [];
+    if (!root) return out;
+    let nodes = [];
+    try { nodes = root.querySelectorAll(TABBABLE_SELECTOR); } catch (e) { return out; }
+    for (let i = 0; i < nodes.length; i += 1) {
+      if (isVisibleNode(nodes[i])) out.push(nodes[i]);
+    }
+    return out;
+  }
+
+  // 降级方案：把容器内可聚焦元素改成 tabindex="-1"，首次进入时记录原值
+  function applyTabindexFallback(node) {
+    if (!node) return;
+    let nodes = [];
+    try { nodes = node.querySelectorAll(FOCUSABLE_SELECTOR); } catch (e) { return; }
+    for (let i = 0; i < nodes.length; i += 1) {
+      const n = nodes[i];
+      if (!tabindexBackup.has(n)) tabindexBackup.set(n, n.getAttribute('tabindex'));
+      n.setAttribute('tabindex', '-1');
+    }
+  }
+
+  function restoreTabindexFallback(node) {
+    if (!node) return;
+    let nodes = [];
+    try { nodes = node.querySelectorAll('[tabindex]'); } catch (e) { return; }
+    for (let i = 0; i < nodes.length; i += 1) {
+      const n = nodes[i];
+      if (!tabindexBackup.has(n)) continue;
+      const prev = tabindexBackup.get(n);
+      tabindexBackup.delete(n);
+      if (prev == null) n.removeAttribute('tabindex');
+      else n.setAttribute('tabindex', prev);
+    }
+  }
+
+  // 容器「不可见 / 可见」的唯一入口：inert + aria-hidden（+ 降级）
+  function setLayerHidden(node, hidden) {
+    if (!node) return;
+    if (hidden) {
+      if (supportsInert) { try { node.inert = true; } catch (e) { /* 忽略 */ } }
+      node.setAttribute('aria-hidden', 'true');
+      hiddenLayers.add(node);
+      if (!supportsInert) applyTabindexFallback(node);
+      return;
+    }
+    if (supportsInert) { try { node.inert = false; } catch (e) { /* 忽略 */ } }
+    node.removeAttribute('aria-hidden');
+    hiddenLayers.delete(node);
+    if (!supportsInert) restoreTabindexFallback(node);
+  }
+
+  // 容器内容在隐藏状态下被重建时，重新补一次降级（inert 无需处理）
+  function refreshLayerHidden(node) {
+    if (!node || !hiddenLayers.has(node) || supportsInert) return;
+    applyTabindexFallback(node);
+  }
+
+  // 焦点归还：目标不存在/已移除时回落到备用触发按钮
+  function returnFocusTo(target, fallback) {
+    let node = (target && target !== document.body && target.isConnected !== false) ? target : null;
+    if (!node && fallback && fallback.isConnected !== false) node = fallback;
+    if (!node || typeof node.focus !== 'function') return;
+    try { node.focus(); } catch (e) { /* 忽略 */ }
+  }
+
+  // 焦点陷阱：在打开的抽屉 / 移动端侧边栏内循环 Tab
+  function activeTrapLayer() {
+    if (isShortcutsOpen()) return null; // <dialog> 自行管理焦点
+    if (activeDrawer === 'settings') return el.settingsDrawer;
+    if (activeDrawer === 'memory') return el.memoryDrawer;
+    if (isSidebarOpen()) return el.sidebar;
+    return null;
+  }
+
+  function handleLayerTab(e) {
+    if (e.key !== 'Tab') return;
+    const layer = activeTrapLayer();
+    if (!layer || layer.hidden) return;
+    const items = collectFocusable(layer);
+    if (!items.length) { e.preventDefault(); return; }
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+    const inside = !!(active && layer.contains(active));
+    if (e.shiftKey) {
+      if (!inside || active === first) { e.preventDefault(); try { last.focus(); } catch (err) { /* 忽略 */ } }
+      return;
+    }
+    if (!inside || active === last) { e.preventDefault(); try { first.focus(); } catch (err) { /* 忽略 */ } }
+  }
+
+  function setExpanded(node, on) {
+    if (node) node.setAttribute('aria-expanded', on ? 'true' : 'false');
+  }
+
+  function isNarrowViewport() {
+    try { return !!(window.matchMedia && window.matchMedia('(max-width: 860px)').matches); }
+    catch (e) { return true; }
+  }
+
+  // 侧边栏：窄屏下隐藏时需要隔离焦点；宽屏常驻可见，保持可交互
+  function syncSidebarHidden() {
+    if (!el.sidebar) return;
+    const sidebarVisible = isNarrowViewport() ? isSidebarOpen() : true;
+    setLayerHidden(el.sidebar, !sidebarVisible);
+  }
+
+  // 触发按钮的 aria-expanded 同步
+  function syncLayerAria() {
+    const sidebarExpanded = isSidebarOpen() || !isNarrowViewport();
+    setExpanded(el.sidebarOpen, sidebarExpanded);
+    setExpanded(el.openMemory, activeDrawer === 'memory');
+    setExpanded(el.openSettings, activeDrawer === 'settings');
+    setExpanded(el.openSettingsTop, activeDrawer === 'settings');
+    setExpanded(el.openShortcuts, isShortcutsOpen());
   }
 
   function sleep(ms) {
@@ -766,8 +925,26 @@
           item: raw.memory.item == null ? '' : String(raw.memory.item),
         };
       }
+      // 本轮实际用到的记忆原文（历史消息同样保留，刷新后仍可回看）
+      const used = normalizeMemoriesUsed(raw.memoriesUsed);
+      if (used.length) msg.memoriesUsed = used;
     }
     return msg;
+  }
+
+  // 归一化后端 done.memoriesUsed：只接受非空字符串（兼容 snake_case 与对象项）
+  function normalizeMemoriesUsed(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    for (let i = 0; i < raw.length && out.length < 8; i += 1) {
+      const item = raw[i];
+      let text = '';
+      if (typeof item === 'string') text = item;
+      else if (item && typeof item === 'object') text = String(item.text || item.content || item.label || '');
+      text = text.replace(/\s+/g, ' ').trim();
+      if (text) out.push(text.slice(0, 200));
+    }
+    return out;
   }
 
   // 只保留已知字段的基本类型，避免把任意结构写进 localStorage
@@ -797,13 +974,38 @@
     };
   }
 
+  // 尽力而为地把损坏的原值留档，方便事后找回（写不进去就忽略）
+  function backupCorruptState(raw) {
+    try {
+      localStorage.setItem(CORRUPT_KEY_PREFIX + Date.now(), String(raw).slice(0, 200000));
+    } catch (e) { /* 忽略：配额/隐私模式下留档失败不影响降级 */ }
+  }
+
+  function toastOnce(flag, message, type) {
+    if (flag.value) return;
+    flag.value = true;
+    try { toast(message, type); } catch (e) { /* 忽略 */ }
+  }
+
+  const corruptFlag = { value: false };
+
   function loadState() {
     let loaded = [];
-    try {
-      const raw = localStorage.getItem(LS_KEYS.sessions);
-      const parsed = raw ? JSON.parse(raw) : [];
-      if (Array.isArray(parsed)) loaded = parsed.map(sanitizeSession).filter(Boolean);
-    } catch (e) { loaded = []; }
+    let raw = null;
+    try { raw = localStorage.getItem(LS_KEYS.sessions); } catch (e) { raw = null; }
+    if (raw) {
+      let parsed = null;
+      let broken = false;
+      try { parsed = JSON.parse(raw); } catch (e) { broken = true; }
+      if (!broken && parsed != null && !Array.isArray(parsed)) broken = true;
+      if (broken) {
+        backupCorruptState(raw);            // 先留档，再降级为空状态
+        loaded = [];
+        toastOnce(corruptFlag, STORAGE_CORRUPT_TOAST, 'error');
+      } else if (Array.isArray(parsed)) {
+        loaded = parsed.map(sanitizeSession).filter(Boolean);
+      }
+    }
     sessions = loaded;
 
     let act = '';
@@ -835,12 +1037,19 @@
             if (m.parts && m.parts.length) o.parts = m.parts.slice(0, 3);
             if (m.route) o.route = m.route;
             if (m.memory) o.memory = m.memory;
+            if (m.memoriesUsed && m.memoriesUsed.length) o.memoriesUsed = m.memoriesUsed.slice(0, 8);
             return o;
           }),
       }));
       localStorage.setItem(LS_KEYS.sessions, JSON.stringify(payload));
       localStorage.setItem(LS_KEYS.activeId, activeId || '');
-    } catch (e) { /* 存储不可用时静默忽略，不影响对话 */ }
+    } catch (e) {
+      // 配额超限 / 隐私模式：降级为「只在内存里继续」，并只提示一次
+      if (!storageWarned) {
+        storageWarned = true;
+        try { toast(STORAGE_FAIL_TOAST, 'error'); } catch (err) { /* 忽略 */ }
+      }
+    }
   }
 
   function getSession(id) {
@@ -1081,6 +1290,56 @@
     setHidden(dbgEl, false);
   }
 
+  // 「用到了：…」——最多 2 条，其余折叠为「等 N 条」；hover / 聚焦看完整原文
+  function renderUsed(usedEl, msg) {
+    if (!usedEl) return;
+    const list = (msg && Array.isArray(msg.memoriesUsed)) ? msg.memoriesUsed : [];
+    // 演示模式的回复没有真实记忆；流式过程中先不出现，等 done 后一次成型
+    if (!list.length || demoEnabled || (msg && msg.streaming)) {
+      usedEl.textContent = '';
+      usedEl.dataset.sig = '';
+      setHidden(usedEl, true);
+      return;
+    }
+    const sig = list.join('\u0001');
+    if (usedEl.dataset.sig === sig) { // 幂等：重复渲染不重复插入
+      setHidden(usedEl, false);
+      return;
+    }
+    usedEl.dataset.sig = sig;
+    usedEl.textContent = '';
+    usedEl.appendChild(makeEl('span', 'msg__used-label', '用到了：'));
+    list.slice(0, USED_MEMORY_SHOW).forEach(function (text, i) {
+      if (i > 0) usedEl.appendChild(makeEl('span', 'msg__used-sep', '、'));
+      const item = makeEl('span', 'msg__used-item', clipText(text, 18));
+      item.title = text;                                     // 轻量 tooltip：完整原文
+      item.setAttribute('aria-label', '用到的记忆：' + text);
+      item.setAttribute('tabindex', '0');                    // 键盘聚焦也能看到
+      usedEl.appendChild(item);
+    });
+    if (list.length > USED_MEMORY_SHOW) {
+      usedEl.appendChild(makeEl('span', 'msg__used-more', ' 等 ' + list.length + ' 条'));
+    }
+    // 有折叠时，整行 hover 也能看到全部原文
+    if (list.length > USED_MEMORY_SHOW) usedEl.title = list.join('；');
+    else usedEl.removeAttribute('title');
+    setHidden(usedEl, false);
+  }
+
+  // 演示模式切换后同步「用到了」的显隐（不重建整段消息，避免滚动跳动）
+  function refreshUsedRows() {
+    if (!el.messages) return;
+    const session = getSession(activeId);
+    if (!session) return;
+    const nodes = el.messages.querySelectorAll('.msg--assistant');
+    for (let i = 0; i < nodes.length; i += 1) {
+      const index = Number(nodes[i].dataset.index);
+      if (!Number.isInteger(index)) continue;
+      const msg = session.messages[index];
+      if (msg) renderUsed(nodes[i].querySelector('.msg__used'), msg);
+    }
+  }
+
   function buildAssistantMessage(msg, index) {
     const article = makeEl('article', 'msg msg--assistant');
     article.dataset.index = String(index);
@@ -1098,6 +1357,9 @@
     dbg.appendChild(makeEl('pre', 'dbg__json', ''));
     setHidden(dbg, true);
 
+    const used = makeEl('div', 'msg__used');
+    setHidden(used, true);
+
     const foot = makeEl('div', 'msg__foot');
     const meta = makeEl('span', 'msg__meta');
     foot.appendChild(meta);
@@ -1107,6 +1369,7 @@
     body.appendChild(bubbles);
     body.appendChild(note);
     body.appendChild(dbg);
+    body.appendChild(used);
     body.appendChild(foot);
     article.appendChild(avatar);
     article.appendChild(body);
@@ -1135,6 +1398,7 @@
 
     renderNote(article.querySelector('.msg__note'), msg);
     renderDebug(article.querySelector('.dbg'), msg);
+    renderUsed(article.querySelector('.msg__used'), msg);
     renderMeta(article.querySelector('.msg__meta'), msg);
 
     const actions = article.querySelectorAll('.msg__action');
@@ -1217,6 +1481,7 @@
       el.sessionList.appendChild(li);
     });
     renderedSessionIds = list.map((s) => s.id);
+    refreshLayerHidden(el.sidebar); // 老浏览器降级时补 tabindex="-1"
     // “没有其它会话时”显示空状态提示
     if (el.sessionsEmpty) setHidden(el.sessionsEmpty, list.length > 1);
   }
@@ -1324,6 +1589,21 @@
       node.classList.add('is-leaving');
       window.setTimeout(() => { if (node.parentNode) node.parentNode.removeChild(node); }, 320);
     }, 3000);
+  }
+
+  // 读屏播报：只在「一条回复完成」时写一次，且截断到 200 字，
+  // 避免流式重渲染让 aria-live 反复朗读整段对话。
+  function announceMessage(text) {
+    if (!el.srLive) return;
+    const clean = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+    if (!clean) return;
+    const chars = Array.from(clean);
+    const clipped = chars.length > SR_LIVE_MAX ? chars.slice(0, SR_LIVE_MAX).join('') + '…' : clean;
+    // 先清空再写入，保证内容相同时也会重新播报
+    el.srLive.textContent = '';
+    window.setTimeout(function () {
+      if (el.srLive) el.srLive.textContent = clipped;
+    }, 30);
   }
 
   /* ============================================================
@@ -1476,17 +1756,22 @@
         };
         applyMemoryFeedback(assistant.memory); // 即时同步「我记得」列表
       }
+      // 本轮实际用到的记忆：字段缺失 / 为空时不显示（后端未升级也能正常用）
+      const doneUsed = normalizeMemoriesUsed(
+        data.memoriesUsed !== undefined ? data.memoriesUsed : data.memories_used
+      );
+      if (doneUsed.length) assistant.memoriesUsed = doneUsed;
       assistant.blocked = !!data.blocked;
       assistant.done = true;
     }
   }
 
   // 手动解析 text/event-stream；返回是否收到 done
-  async function streamChat(text, sessionId, assistant, signal) {
+  async function streamChat(text, sessionId, assistant, signal, isRetry) {
     const res = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
-      body: JSON.stringify({ message: text, sessionId: sessionId }),
+      body: JSON.stringify({ message: text, sessionId: sessionId, retry: isRetry === true }),
       signal: signal,
     });
     if (!res.ok) throw new Error('stream_http_' + res.status);
@@ -1527,11 +1812,11 @@
   }
 
   // 非流式降级
-  async function fetchNonStream(text, sessionId, signal) {
+  async function fetchNonStream(text, sessionId, signal, isRetry) {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, sessionId: sessionId }),
+      body: JSON.stringify({ message: text, sessionId: sessionId, retry: isRetry === true }),
       signal: signal,
     });
     if (!res.ok) throw new Error('http_' + res.status);
@@ -1556,8 +1841,8 @@
     toast(message || NET_FAIL_TOAST, 'error');
   }
 
-  async function fallbackReply(text, session, assistant, signal) {
-    const data = await fetchNonStream(text, session.id, signal);
+  async function fallbackReply(text, session, assistant, signal, isRetry) {
+    const data = await fetchNonStream(text, session.id, signal, isRetry);
     if (data.sessionId) adoptBackendSession(session, String(data.sessionId));
     assistant.content = typeof data.reply === 'string' ? data.reply : '';
     if (data.strategy) assistant.strategy = String(data.strategy);
@@ -1572,6 +1857,10 @@
       };
       applyMemoryFeedback(assistant.memory); // 即时同步「我记得」列表
     }
+    const fallbackUsed = normalizeMemoriesUsed(
+      data.memoriesUsed !== undefined ? data.memoriesUsed : data.memories_used
+    );
+    if (fallbackUsed.length) assistant.memoriesUsed = fallbackUsed;
     assistant.blocked = !!data.blocked;
     assistant.error = false;
     assistant.done = true;
@@ -1628,6 +1917,9 @@
     }
     pending = null;
 
+    // 无障碍：整条回复完成后再播报一次，流式过程不打扰读屏
+    try { announceMessage(assistant.content); } catch (e) { /* 播报失败不影响主流程 */ }
+
     saveState();
     try {
       renderSessionList();
@@ -1639,7 +1931,7 @@
     } catch (e) { /* 收尾渲染异常忽略 */ }
   }
 
-  async function startGeneration(text, session, assistant) {
+  async function startGeneration(text, session, assistant, isRetry) {
     generating = true;
     syncComposer();
 
@@ -1666,11 +1958,11 @@
         } catch (e) { /* 渲染异常不影响请求 */ }
       }, FIRST_TOKEN_MS);
 
-      const finished = await streamChat(text, session.id, assistant, controller.signal);
+      const finished = await streamChat(text, session.id, assistant, controller.signal, isRetry);
       if (!finished && !controller.signal.aborted) {
         // 流提前结束却没有 done：按“流中断”处理，降级到非流式
         try {
-          await fallbackReply(text, session, assistant, controller.signal);
+          await fallbackReply(text, session, assistant, controller.signal, isRetry);
           toast(FALLBACK_TOAST, 'success');
         } catch (e) {
           degradeLocally(assistant, NET_FAIL_TOAST);
@@ -1682,7 +1974,7 @@
       } else {
         // 网络异常 / !res.ok / 解析异常 -> 自动降级
         try {
-          await fallbackReply(text, session, assistant, controller.signal);
+          await fallbackReply(text, session, assistant, controller.signal, isRetry);
           toast(FALLBACK_TOAST, 'success');
         } catch (e) {
           degradeLocally(assistant, NET_FAIL_TOAST);
@@ -1782,6 +2074,7 @@
     msg.riskLevel = '';
     msg.route = null;
     msg.memory = null;
+    msg.memoriesUsed = null;
     msg.parts = null;
     msg.stopped = false;
     msg.blocked = false;
@@ -1804,7 +2097,7 @@
       el: el.messages.querySelector('.msg--assistant[data-index="' + index + '"]'),
     };
 
-    startGeneration(userText, session, msg);
+    startGeneration(userText, session, msg, true);
   }
 
   /* ============================================================
@@ -1884,14 +2177,29 @@
    * 十四、侧边栏 / 主题 / 弹窗 / 复制
    * ============================================================ */
 
-  function openSidebar() {
+  function openSidebar(trigger) {
     if (el.app) el.app.classList.add('is-sidebar-open');
+    sidebarReturnFocus = trigger || (document.activeElement !== document.body ? document.activeElement : null);
     setHidden(el.scrim, false);
+    syncSidebarHidden();  // 可见 -> 解除 inert
+    syncLayerAria();
+    window.setTimeout(function () {
+      if (!isSidebarOpen()) return;
+      const items = collectFocusable(el.sidebar);
+      if (items.length) { try { items[0].focus(); } catch (e) { /* 忽略 */ } }
+    }, 60);
   }
 
   function closeSidebar() {
+    const wasOpen = isSidebarOpen();
     if (el.app) el.app.classList.remove('is-sidebar-open');
     setHidden(el.scrim, true);
+    syncSidebarHidden();  // 隐藏 -> 加 inert（宽屏常驻时自动跳过）
+    syncLayerAria();
+    if (wasOpen) {
+      returnFocusTo(sidebarReturnFocus, el.sidebarOpen);
+      sidebarReturnFocus = null;
+    }
   }
 
   function isSidebarOpen() {
@@ -2223,6 +2531,11 @@
   }
 
   function syncDemoUI() {
+    // 演示模式没有真实记忆：状态变化时同步隐藏 / 恢复「用到了」提示
+    if (demoApplied !== demoEnabled) {
+      demoApplied = demoEnabled;
+      try { refreshUsedRows(); } catch (e) { /* 忽略 */ }
+    }
     if (el.demoEntryText) {
       el.demoEntryText.textContent = demoEnabled ? DEMO_ENTRY_ON_TEXT : DEMO_ENTRY_OFF_TEXT;
     }
@@ -2305,9 +2618,18 @@
    * 十六、事件绑定
    * ============================================================ */
 
+  // 当前焦点是否在会吃掉按键的输入控件里
+  function isEditableTarget(node) {
+    const target = node || document.activeElement;
+    if (!target) return false;
+    const tag = String(target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+    return !!target.isContentEditable;
+  }
+
   function bindEvents() {
-    // 侧边栏
-    if (el.sidebarOpen) el.sidebarOpen.addEventListener('click', openSidebar);
+    // 侧边栏（传入触发按钮，关闭时焦点归还给它）
+    if (el.sidebarOpen) el.sidebarOpen.addEventListener('click', function () { openSidebar(el.sidebarOpen); });
     if (el.sidebarClose) el.sidebarClose.addEventListener('click', closeSidebar);
     if (el.scrim) el.scrim.addEventListener('click', closeSidebar);
 
@@ -2419,13 +2741,28 @@
     // 顶栏「未配置模型」提示 -> 再次打开向导
     if (el.modelWarn) el.modelWarn.addEventListener('click', function () { openWizard(1); });
 
-    // 设置 / 记忆入口
-    if (el.openSettings) el.openSettings.addEventListener('click', function () { openDrawer('settings'); });
-    if (el.openSettingsTop) el.openSettingsTop.addEventListener('click', function () { openDrawer('settings'); });
-    if (el.openMemory) el.openMemory.addEventListener('click', function () { openDrawer('memory'); });
+    // 设置 / 记忆入口（传入触发按钮，关闭时焦点归还给它）
+    if (el.openSettings) el.openSettings.addEventListener('click', function () { openDrawer('settings', el.openSettings); });
+    if (el.openSettingsTop) el.openSettingsTop.addEventListener('click', function () { openDrawer('settings', el.openSettingsTop); });
+    if (el.openMemory) el.openMemory.addEventListener('click', function () { openDrawer('memory', el.openMemory); });
     if (el.settingsClose) el.settingsClose.addEventListener('click', closeDrawer);
     if (el.memoryClose) el.memoryClose.addEventListener('click', closeDrawer);
     if (el.drawerScrim) el.drawerScrim.addEventListener('click', closeDrawer);
+
+    // 键盘快捷键帮助：入口按钮 / 关闭按钮 / 点遮罩 / Esc
+    if (el.openShortcuts) {
+      el.openShortcuts.addEventListener('click', function () { openShortcuts(el.openShortcuts); });
+    }
+    if (el.shortcutsClose) el.shortcutsClose.addEventListener('click', closeShortcuts);
+    if (el.shortcutsModal) {
+      el.shortcutsModal.addEventListener('click', function (e) {
+        if (e.target === el.shortcutsModal) closeShortcuts(); // 点 ::backdrop
+      });
+      el.shortcutsModal.addEventListener('cancel', function (e) {
+        e.preventDefault(); // 拦下原生立即关闭，走带退场动画的关闭
+        closeShortcuts();
+      });
+    }
 
     // 向导：上一步 / 下一步 / 暂不配置 / 点遮罩关闭
     if (el.wizardBack) el.wizardBack.addEventListener('click', function () { showWizardStep(wizardStep - 1); });
@@ -2504,20 +2841,41 @@
     // 桌面外壳（Tauri）窗口按钮
     bindTitlebar();
 
-    // Esc：按层级关闭（弹窗的 Esc 由 <dialog> 原生处理）
+    // 抽屉 / 移动端侧边栏内循环 Tab（焦点陷阱）
+    document.addEventListener('keydown', handleLayerTab);
+
+    // 全局快捷键：? 帮助、Ctrl/Cmd+K 新对话、Esc 按层级关闭
     document.addEventListener('keydown', function (e) {
-      if (e.key !== 'Escape') return;
-      // 按层级关闭：向导 → 抽屉 → 侧边栏（<dialog> 的 Esc 由原生处理）
+      const key = e.key;
+      // Ctrl/Cmd+K：新建对话
+      if (!e.altKey && (e.ctrlKey || e.metaKey) && (key === 'k' || key === 'K')) {
+        e.preventDefault();
+        if (isShortcutsOpen()) closeShortcuts();
+        startNewChat();
+        return;
+      }
+      // ?：显示快捷键帮助（输入框 / 文本域 / 可编辑区域内不抢键）
+      if (key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (isEditableTarget(e.target) || isShortcutsOpen()) return;
+        e.preventDefault();
+        openShortcuts(document.activeElement);
+        return;
+      }
+      if (key !== 'Escape') return;
+      // 按层级关闭：快捷键帮助 → 向导 → 抽屉 → 侧边栏（<dialog> 的 Esc 由原生处理）
+      if (isShortcutsOpen()) { closeShortcuts(); return; }
       if (isWizardOpen()) { closeWizard(true); return; }
       if (activeDrawer) { closeDrawer(); return; }
       if (isSidebarOpen()) closeSidebar();
     });
 
-    // 尺寸变化：重算输入框高度与滚动状态
+    // 尺寸变化：重算输入框高度与滚动状态，并同步侧边栏的可见性/无障碍状态
     window.addEventListener('resize', function () {
       autosize();
       stickBottom = isNearBottom();
       updateScrollButton();
+      syncSidebarHidden();
+      syncLayerAria();
     });
 
     // 回到前台时刷新连接状态
@@ -2559,30 +2917,72 @@
     if (resolve) resolve(!!value);
   }
 
-  function openDrawer(name) {
+  function openDrawer(name, trigger) {
     closeSidebar();
     activeDrawer = name;
+    drawerReturnFocus = trigger || (document.activeElement !== document.body ? document.activeElement : null);
     const panel = name === 'settings' ? el.settingsDrawer : (name === 'memory' ? el.memoryDrawer : null);
     const other = name === 'settings' ? el.memoryDrawer : el.settingsDrawer;
     hideLayer(other, 160);                       // 两个抽屉互斥：另一个播退场
+    setLayerHidden(other, true);                 // 隐藏中的抽屉不可聚焦
+    setLayerHidden(panel, false);                // 目标抽屉可见 -> 解除 inert
     showLayer(el.drawerScrim, 'is-open', 220);   // 遮罩淡入（关闭时同样有淡出）
     showLayer(panel, 'is-open', 280);            // 滑入 + 缩放 + 淡入
+    syncLayerAria();
     if (name === 'settings') loadConfig();
     else if (name === 'memory') loadMemory();
     if (panel) {
       window.setTimeout(function () {
-        if (panel.hidden) return;
-        const focusable = panel.querySelector('input, select, textarea, button');
-        if (focusable) { try { focusable.focus(); } catch (e) { /* 忽略 */ } }
+        if (panel.hidden || activeDrawer !== name) return;
+        const items = collectFocusable(panel);
+        if (items.length) { try { items[0].focus(); } catch (e) { /* 忽略 */ } }
       }, 80);
     }
   }
 
   function closeDrawer() {
+    const name = activeDrawer;
     activeDrawer = '';
+    const target = drawerReturnFocus;
+    drawerReturnFocus = null;
     hideLayer(el.settingsDrawer, 200);
     hideLayer(el.memoryDrawer, 200);
     hideLayer(el.drawerScrim, 200);
+    setLayerHidden(el.settingsDrawer, true);  // 关闭后立即移出无障碍树与 Tab 序列
+    setLayerHidden(el.memoryDrawer, true);
+    syncLayerAria();
+    if (name) {
+      const fallback = name === 'memory' ? el.openMemory : (el.openSettingsTop || el.openSettings);
+      returnFocusTo(target, fallback);
+    }
+  }
+
+  /* ---- 键盘快捷键帮助（复用 <dialog class="modal"> 体系） ---- */
+
+  function isShortcutsOpen() {
+    return !!(el.shortcutsModal && el.shortcutsModal.open);
+  }
+
+  function openShortcuts(trigger) {
+    if (!el.shortcutsModal || typeof el.shortcutsModal.showModal !== 'function') return false;
+    if (isShortcutsOpen()) { setExpanded(el.openShortcuts, true); return true; }
+    shortcutsReturnFocus = trigger || (document.activeElement !== document.body ? document.activeElement : null);
+    if (!openDialog(el.shortcutsModal)) { // <dialog> 不可用时静默降级
+      shortcutsReturnFocus = null;
+      return false;
+    }
+    syncLayerAria();
+    return true;
+  }
+
+  function closeShortcuts() {
+    if (!el.shortcutsModal) return;
+    const target = shortcutsReturnFocus;
+    shortcutsReturnFocus = null;
+    closeDialog(el.shortcutsModal, 190);
+    syncLayerAria();
+    // <dialog> close() 之后焦点会回到打开前的元素，这里再兜一次
+    window.setTimeout(function () { returnFocusTo(target, null); }, layerDelay(220));
   }
 
   function isWizardOpen() {
@@ -2901,7 +3301,7 @@
     return btn;
   }
 
-  function buildMemoryItem(item) {
+  function buildMemoryItem(item, usedKeys) {
     const li = makeEl('li', 'mem-item');
     li.dataset.id = item.id;
     li.dataset.pinned = item.pinned ? 'true' : 'false';
@@ -2915,6 +3315,9 @@
     meta.appendChild(cat);
     meta.appendChild(makeEl('span', 'mem-tag mem-tag--src', item.source === 'manual' ? '手动添加' : '自动记住'));
     if (item.pinned) meta.appendChild(makeEl('span', 'mem-tag mem-tag--pin', '已置顶'));
+    if (usedKeys && usedKeys.has(memoryKey(item.text))) {
+      meta.appendChild(makeEl('span', 'mem-tag mem-tag--recent', '最近用过'));
+    }
     main.appendChild(meta);
     li.appendChild(main);
 
@@ -2929,14 +3332,39 @@
     return li;
   }
 
+  // 归一化记忆原文，用于「本条被用过」的匹配
+  function memoryKey(text) {
+    return String(text == null ? '' : text).replace(/\s+/g, '').trim();
+  }
+
+  // 当前会话里最近一条带 memoriesUsed 的回复，就是「本轮被用过」的记忆
+  function recentlyUsedKeys() {
+    const keys = new Set();
+    const session = getSession(activeId);
+    if (!session) return keys;
+    for (let i = session.messages.length - 1; i >= 0; i -= 1) {
+      const msg = session.messages[i];
+      if (msg && msg.role === 'assistant' && Array.isArray(msg.memoriesUsed) && msg.memoriesUsed.length) {
+        msg.memoriesUsed.forEach(function (text) {
+          const key = memoryKey(text);
+          if (key) keys.add(key);
+        });
+        break;
+      }
+    }
+    return keys;
+  }
+
   function renderMemoryList(items, meta) {
     const list = Array.isArray(items) ? items : [];
     if (el.memoryList) {
+      const usedKeys = recentlyUsedKeys();
       el.memoryList.textContent = '';
       list.forEach((item) => {
         if (!item || !item.id) return;
-        el.memoryList.appendChild(buildMemoryItem(item));
+        el.memoryList.appendChild(buildMemoryItem(item, usedKeys));
       });
+      refreshLayerHidden(el.memoryList); // 老浏览器降级时补 tabindex="-1"
     }
     if (el.memoryCount) {
       el.memoryCount.textContent = String(typeof (meta && meta.count) === 'number' ? meta.count : list.length);
@@ -3203,12 +3631,24 @@
   function init() {
     initDesktopShell(); // 先判定是否运行在 Tauri 里，再渲染其余界面
 
-    el.messages.setAttribute('aria-live', 'polite'); // 无障碍：消息区播报
+    // 无障碍：消息列表不再整体 aria-live（流式重渲染会反复播报），
+    // 改由 #sr-live 在「一条回复完成」时播报一次（见 announceMessage）。
+    el.messages.removeAttribute('aria-live');
+    if (el.messages.getAttribute('role') === 'log') el.messages.removeAttribute('role');
+    if (!el.srLive) { // 契约缺失时兜底创建一个视觉隐藏的 live 区
+      el.srLive = document.createElement('div');
+      el.srLive.id = 'sr-live';
+      el.srLive.className = 'sr-only';
+      el.srLive.setAttribute('aria-live', 'polite');
+      if (el.messages.parentNode) el.messages.parentNode.insertBefore(el.srLive, el.messages.nextSibling);
+    }
 
     initTheme();
     loadState();
     ensureActive();
     bindEvents();
+    syncSidebarHidden();  // 窄屏初始为隐藏：inert 隔离
+    syncLayerAria();
 
     // 新增组件：默认值与上次偏好
     setDebug(readDebugPref(), false);
@@ -3220,6 +3660,8 @@
 
     closeSidebar();
     closeDrawer();
+    syncSidebarHidden();
+    syncLayerAria();
     stickBottom = true;
     renderAll();
     renderSuggestions(STATIC_SUGGESTIONS); // 先给静态兜底，comeback 回来后替换

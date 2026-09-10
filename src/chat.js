@@ -10,7 +10,7 @@
 
 const express = require('express');
 const crypto = require('crypto');
-const { sanitizeText } = require('./utils');
+const { sanitizeText, normalizeText } = require('./utils');
 const {
   ensureSession, addTurn, getHistory, getState, getRiskHistory, getInnerState,
   pushPendingTurn, countPendingTurns, drainPendingTurns
@@ -21,7 +21,8 @@ const { buildSystemPrompt, PROMPT_VERSION } = require('./prompts');
 const { PERSONA_VERSION } = require('./persona');
 const { callLLM, callLLMStream, getConfig } = require('./llm');
 const memory = require('./memory');
-const { AGENT_VERSION, appraise, resolveStrategy, localScreen, review } = require('./agents');
+const { AGENT_VERSION, appraise, resolveStrategy, localScreen, review,
+  decideTier, fallbackPlan, getCachedPlan } = require('./agents');
 const { describeInnerState, updateInnerState, replyShape } = require('./innerstate');
 const { logCall } = require('./logger');
 const { isDemoEnabled, demoReply } = require('./demo');
@@ -37,10 +38,25 @@ const DEMO_FALLBACK = '嗯，我在听。你可以慢慢说，也可以先停在
 const EXTRACT_EVERY_TURNS = 3;   // 每 3 轮批量抽取一次长期记忆（省额度）
 const extracting = new Set();    // 正在抽取的会话，避免并发
 
+/**
+ * 召回本轮要用的长期记忆：返回完整条目（保留 text 等字段，便于前端展示「用到了哪条记忆」）。
+ * 上限 6 条，顺序即注入顺序；任何异常都返回空数组，绝不影响主链路。
+ */
 function collectMemories(text) {
   try {
     const items = memory.retrieveMemories(text, { limit: 6 });
-    return items.map(it => it.text);
+    if (!Array.isArray(items)) return [];
+    return items.slice(0, 6).filter(it => it && typeof it.text === 'string' && it.text);
+  } catch (e) {
+    return [];
+  }
+}
+
+/** 从记忆条目里取出真正要写进提示词的文本（最多 6 条，按注入顺序）。 */
+function memoryTexts(items) {
+  try {
+    if (!Array.isArray(items)) return [];
+    return items.slice(0, 6).map(it => String((it && it.text) || '')).filter(Boolean);
   } catch (e) {
     return [];
   }
@@ -83,6 +99,59 @@ function scheduleMemoryExtraction(sessionId) {
 }
 
 /**
+ * 「重新生成」去重（只允许改 chat.js：本函数只读使用 sessions 的现有导出）。
+ *
+ * 前端点「重新生成」会把同一条消息再发一次；若不处理，addTurn(user) 会追加一条
+ * 重复的用户消息，多轮上下文被污染。这里在会话内定位「这条用户消息 + 紧随其后的
+ * 助手回复」，删掉助手回复并保留用户消息，返回实际行为供 agent.retry_dedup 标注。
+ *
+ * 防御性约束（宁可少做，也不破坏会话）：
+ *   - 找不到对应消息 → 按普通请求处理（返回 ok=false，调用方会正常 addTurn）；
+ *   - 命中的用户消息后面还有更多轮次（说明用户在重试很久之前的一条）→ 不动会话，
+ *     按普通请求处理，避免误删后续对话；
+ *   - 任何异常 → 按普通请求处理，绝不报错。
+ *
+ * @returns {{ ok: boolean, status: string, removedAssistants: number }}
+ */
+function dedupeRetryTurns(sessionId, message) {
+  try {
+    const s = ensureSession(sessionId);
+    if (!s || !Array.isArray(s.turns) || !s.turns.length) {
+      return { ok: false, status: 'fallback_normal', removedAssistants: 0 };
+    }
+    const key = normalizeText(message);
+    if (!key) return { ok: false, status: 'fallback_normal', removedAssistants: 0 };
+
+    // 从末尾往前找最近一条内容相同的用户消息
+    let idx = -1;
+    for (let i = s.turns.length - 1; i >= 0; i -= 1) {
+      const t = s.turns[i];
+      if (t && t.role === 'user' && normalizeText(t.text) === key) { idx = i; break; }
+    }
+    if (idx === -1) return { ok: false, status: 'fallback_normal', removedAssistants: 0 };
+
+    const tail = s.turns.slice(idx + 1);
+    const onlyAssistantTail = tail.length <= 1 && tail.every(t => t && t.role === 'assistant');
+    if (!onlyAssistantTail) {
+      // 重试的是更早的一轮：不动会话，退回普通请求
+      return { ok: false, status: 'fallback_normal', removedAssistants: 0 };
+    }
+
+    // 命中末尾这一轮：保留用户消息，移除其后已存在的助手回复
+    s.turns = s.turns.slice(0, idx + 1);
+    s.updatedAt = Date.now();
+    const removedAssistants = tail.length;
+    return {
+      ok: true,
+      status: removedAssistants > 0 ? 'deduped' : 'user_reused',
+      removedAssistants
+    };
+  } catch (e) {
+    return { ok: false, status: 'fallback_normal', removedAssistants: 0 };
+  }
+}
+
+/**
  * 组装一次请求所需的全部上下文。
  */
 function prepareTurn(body) {
@@ -93,6 +162,10 @@ function prepareTurn(body) {
   if (!sessionId) sessionId = FAKE_SESSION_PREFIX + crypto.randomUUID();
   ensureSession(sessionId);
 
+  // 可选字段 retry=true：前端「重新生成」重发同一条消息时，避免重复写入会话
+  const retry = !!(body && body.retry === true);
+  const retryDedup = retry ? dedupeRetryTurns(sessionId, fullMessage.slice(0, 2000)) : null;
+
   const message = fullMessage.slice(0, 2000);
   const riskHistory = getRiskHistory(sessionId);
   const inputSafety = checkInputSafety(fullMessage, { riskHistory });
@@ -101,7 +174,7 @@ function prepareTurn(body) {
   const route = buildRoute(inputSafety.riskLevel, decision, state);
   const explicit = handleExplicitMemory(fullMessage);
 
-  return { message, fullMessage, sessionId, inputSafety, decision, route, state, explicit };
+  return { message, fullMessage, sessionId, inputSafety, decision, route, state, explicit, retry, retryDedup };
 }
 
 function buildMessages(history) {
@@ -123,16 +196,64 @@ function isDemoActive() {
 }
 
 /**
+ * 档位判定（安全兜底）：任何异常都退回 standard（现有行为）。
+ * 说明：重试请求里会话末尾就是本轮这条用户消息，判定「与上一条是否相同」时必须跳过它，
+ * 否则会把「重发同一条」误判成「复述上一条」，从而用 fallbackPlan 顶掉上一次的「观」结果。
+ */
+function decideTierSafe(ctx) {
+  try {
+    const history = getHistory(ctx.sessionId);
+    const skipTail = !!(ctx.retry && ctx.retryDedup && ctx.retryDedup.ok);
+    let lastUserMessage = '';
+    for (let i = history.length - 1 - (skipTail ? 1 : 0); i >= 0; i -= 1) {
+      if (history[i] && history[i].role === 'user') { lastUserMessage = history[i].text; break; }
+    }
+    const r = decideTier({
+      message: ctx.message,
+      riskLevel: ctx.inputSafety.riskLevel,
+      lastUserMessage
+    });
+    if (r && r.tier) return { tier: r.tier, reason: r.reason || '' };
+  } catch (e) { /* 落回 standard */ }
+  return { tier: 'standard', reason: '档位判定异常，退回标准「观」+「书」两段式' };
+}
+
+/** retry 请求的 agent 标注：如实写明实际做了什么（deduped / user_reused / fallback_normal）。 */
+function attachRetryMeta(agent, ctx) {
+  try {
+    if (ctx && ctx.retry) {
+      agent.retry_dedup = (ctx.retryDedup && ctx.retryDedup.status) || 'fallback_normal';
+      agent.retry_removed_assistants = (ctx.retryDedup && ctx.retryDedup.removedAssistants) || 0;
+    }
+  } catch (e) { /* 忽略 */ }
+  return agent;
+}
+
+/**
  * 生成一次回复（非流式路径 / 流式路径共用）。
  */
 async function generateReply(ctx, { stream, onDelta, signal }) {
   const { message, sessionId, inputSafety, decision } = ctx;
   const riskLevel = inputSafety.riskLevel;
+  const tierInfo = decideTierSafe(ctx);
 
   // 危机场景：固定话术，不交给模型自由生成（也不走演示话术）
+  // 档位不参与危机协议：这里只做标注，方便前端排查，不代表跑了流水线。
   if (riskLevel === 'L3') {
     const reply = (inputSafety.meta && inputSafety.meta.reply) || CRISIS_FALLBACK;
-    return { reply, usedModel: false, usage: null, blocked: false, agent: { version: AGENT_VERSION, mode: 'crisis_fixed' } };
+    return {
+      reply,
+      usedModel: false,
+      usage: null,
+      blocked: false,
+      memoriesUsed: [],
+      agent: attachRetryMeta({
+        version: AGENT_VERSION,
+        mode: 'crisis_fixed',
+        tier: 'crisis',
+        tier_reason: 'L3 危机：走规则层固定协议，档位不参与，不调用模型'
+      }, ctx)
+    };
   }
 
   // 免 Key 演示模式：在「观」等任何模型调用之前拦截，返回本地脚本回复。
@@ -153,22 +274,56 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
       blocked: !!demoCheck.blocked,
       reason: demoCheck.blocked ? demoCheck.reason : 'demo_script',
       demo: true,
-      agent: { version: AGENT_VERSION, mode: 'demo_script', strategyKey: decision.key }
+      memoriesUsed: [],
+      agent: attachRetryMeta({
+        version: AGENT_VERSION,
+        mode: 'demo_script',
+        strategyKey: decision.key,
+        tier: tierInfo.tier,
+        tier_reason: tierInfo.reason + '；演示模式（无 Key）不调用模型，档位仅作标注'
+      }, ctx)
     };
   }
 
-  const memories = collectMemories(message);
+  // 本轮真正注入提示词的记忆（顺序 = 注入顺序，最多 6 条）；异常时为空数组
+  const memoryItems = collectMemories(message);
+  const memoriesUsed = memoryTexts(memoryItems);
+  const memories = memoriesUsed;
   const innerState = getInnerState(sessionId);
 
-  // 「观」：感知 + 定调（一次短调用；失败自动降级，不阻塞回复）
-  const plan = await appraise({
-    userText: message,
-    recentTurns: getHistory(sessionId).slice(-3),
-    strategyKey: decision.key,
-    riskLevel,
-    memories,
-    innerStateHint: describeInnerState(innerState)
-  });
+  // 自适应档位：minimal 跳过「观」，标准档照旧两段式
+  let tier = tierInfo.tier;
+  let tierReason = tierInfo.reason;
+  let plan = null;
+  try {
+    if (tier === 'minimal') {
+      // 同理心底线：策略仍由规则层 chooseStrategy 决定（resolveStrategy 会保留它），
+      // fallbackPlan 只提供「不调用模型」的默认表达形态，不做无脑回复。
+      plan = getCachedPlan(sessionId, message, riskLevel);
+      if (plan) {
+        tierReason = tierReason + '；命中本会话「观」结果缓存，直接复用';
+      } else {
+        // 没跑「观」就没有「对方要不要被提问」的观察，askQuestion 置为 null（未知）：
+        // 避免本地快检把「规则层没信号」误判成「对方不想被问」，进而多跑一次「校」。
+        plan = Object.assign(fallbackPlan({}, 'tier_minimal_skip_appraise'), { askQuestion: null });
+      }
+    } else {
+      // 「观」：感知 + 定调（一次短调用；失败自动降级，不阻塞回复）
+      plan = await appraise({
+        sessionId,
+        userText: message,
+        recentTurns: getHistory(sessionId).slice(-3),
+        strategyKey: decision.key,
+        riskLevel,
+        memories,
+        innerStateHint: describeInnerState(innerState)
+      });
+    }
+  } catch (e) {
+    plan = null;
+  }
+  // 兜底：档位相关逻辑任何一步失败都不能让用户收不到回复
+  if (!plan) plan = Object.assign(fallbackPlan({}, 'tier_plan_error_fallback'), { askQuestion: null });
 
   // 策略裁决：规则层独占 S0/S6，模型只在 S1—S5 之间微调
   const resolved = resolveStrategy(decision.key, plan);
@@ -216,24 +371,29 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
     const rv = await review({ userText: message, strategyKey, riskLevel }, content);
     critic = { triggered: true, issues: issues.concat(rv.issues || []), revised: false, degraded: !!rv.degraded };
     if (rv.revised) { content = rv.revised; critic.revised = true; }
+    // 触发「校」后档位升级为 reviewed（共 3 次调用）
+    tier = 'reviewed';
+    tierReason = tierReason + '；本地快检命中（' + issues.slice(0, 2).join('、') + '），追加「校」审校';
   }
 
-  const agent = {
+  const agent = attachRetryMeta({
     version: AGENT_VERSION,
     mode: 'multi_agent',
+    tier,
+    tier_reason: tierReason,
     plan,
     strategy_from: resolved.from,
     strategy_resolved: strategyKey,
     strategy_changed: resolved.changed,
     shape,
     critic
-  };
+  }, ctx);
 
   const outputCheck = checkOutputSafety(content);
   if (outputCheck.blocked) {
-    return { reply: outputCheck.fallback, usedModel: true, usage, blocked: true, reason: outputCheck.reason, agent };
+    return { reply: outputCheck.fallback, usedModel: true, usage, blocked: true, reason: outputCheck.reason, agent, memoriesUsed };
   }
-  return { reply: content, usedModel: true, usage, blocked: false, agent };
+  return { reply: content, usedModel: true, usage, blocked: false, agent, memoriesUsed };
 }
 
 /**
@@ -243,7 +403,12 @@ function finalizeTurn(ctx, result, t0) {
   const { message, sessionId, inputSafety, decision, state, route, explicit } = ctx;
   updateSessionState(state, decision, inputSafety.riskLevel);
   if (result.agent && ctx.route) ctx.route.agent = result.agent;
-  addTurn(sessionId, 'user', message, { riskLevel: inputSafety.riskLevel, strategy: decision.key });
+  // retry 命中末尾这一轮时，会话里已存在同一条用户消息，不能再追加（避免上下文重复污染）；
+  // 未命中（retryDedup.ok === false）时按普通请求处理，照常追加。
+  const reusedUserTurn = !!(ctx.retry && ctx.retryDedup && ctx.retryDedup.ok);
+  if (!reusedUserTurn) {
+    addTurn(sessionId, 'user', message, { riskLevel: inputSafety.riskLevel, strategy: decision.key });
+  }
   addTurn(sessionId, 'assistant', result.reply, {
     riskLevel: inputSafety.riskLevel,
     strategy: decision.key,
@@ -294,6 +459,8 @@ function successPayload(ctx, result) {
     // 诚实标注：演示模式生成的回复不属于真实模型输出
     demo: result.demo === true,
     agent: result.agent || null,
+    // 本轮真正注入提示词的记忆文本（最多 6 条，按注入顺序）；无记忆时为空数组
+    memoriesUsed: Array.isArray(result.memoriesUsed) ? result.memoriesUsed : [],
     memory: ctx.explicit ? { action: ctx.explicit.type, item: (ctx.explicit.item && ctx.explicit.item.text) || null } : null
   };
 }
@@ -343,6 +510,8 @@ router.post('/', async (req, res) => {
         riskLevel: 'unknown',
         sessionId: ctx ? ctx.sessionId : (req.body && req.body.sessionId),
         requestId,
+        // 本轮没有成功注入任何记忆
+        memoriesUsed: [],
         error: friendlyMessage(e)
       }
     });
@@ -445,6 +614,8 @@ router.post('/stream', async (req, res) => {
       // 诚实标注：演示模式生成的回复不属于真实模型输出
       demo: result.demo === true,
       agent: result.agent || null,
+      // 本轮真正注入提示词的记忆文本（最多 6 条，按注入顺序）
+      memoriesUsed: Array.isArray(result.memoriesUsed) ? result.memoriesUsed : [],
       memory: ctx.explicit ? { action: ctx.explicit.type, item: (ctx.explicit.item && ctx.explicit.item.text) || null } : null
     });
   } catch (e) {
@@ -463,7 +634,11 @@ router.post('/stream', async (req, res) => {
     });
     send('error', { message: friendlyMessage(e), code: e.code || 'model_error' });
     await streamText(ERROR_FALLBACK);
-    addTurn(ctx.sessionId, 'user', ctx.message, { riskLevel: ctx.inputSafety.riskLevel, strategy: ctx.decision.key });
+    // retry 且已复用会话里的用户消息时，不能再追加一条用户消息
+    const errorReusedUserTurn = !!(ctx.retry && ctx.retryDedup && ctx.retryDedup.ok);
+    if (!errorReusedUserTurn) {
+      addTurn(ctx.sessionId, 'user', ctx.message, { riskLevel: ctx.inputSafety.riskLevel, strategy: ctx.decision.key });
+    }
     addTurn(ctx.sessionId, 'assistant', ERROR_FALLBACK, { riskLevel: ctx.inputSafety.riskLevel, strategy: 'error_fallback' });
     return finish({
       reply: ERROR_FALLBACK,
@@ -474,7 +649,8 @@ router.post('/stream', async (req, res) => {
       sessionId: ctx.sessionId,
       blocked: false,
       demo: false,
-      error: friendlyMessage(e)
+      error: friendlyMessage(e),
+      memoriesUsed: []
     });
   }
 });

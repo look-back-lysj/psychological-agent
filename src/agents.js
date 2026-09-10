@@ -11,13 +11,21 @@
  *   规则层守红线 —— 风险等级 L0—L3、危机/转介策略不可被模型推翻；
  *   模型层懂语境 —— 只允许在 S1/S2/S3/S4/S5 之间微调策略。
  *   冲突时：规则优先。
+ *
+ * 自适应三档（decideTier）：
+ *   minimal  —— 风险 L0 且（去标点后 ≤6 字的寒暄/短应答，或与上一条用户消息相似度 ≥0.9）
+ *               → 跳过「观」，只跑 1 次「书」；策略与表达形态仍由规则层 + fallbackPlan 决定；
+ *   standard —— 其余 L0/L1/L2 → 「观」+「书」两次调用（现有行为）；
+ *   reviewed —— 本地快检 localScreen() 发现问题后追加「校」，共 3 次（现有行为，由 chat.js 决定）。
+ *   L3 危机不进入本档位：规则层走固定危机协议，不调用模型。
+ * 安全永远优先：L2 必须 standard 以上，L3 固定协议；档位只影响「跑几次」，不影响策略与红线。
  */
 
 const { callLLM } = require('./llm');
 const { STRATEGY_META } = require('./strategy');
 const { normalizeText } = require('./utils');
 
-const AGENT_VERSION = 'v3.0';
+const AGENT_VERSION = 'v3.1'; // v3.1：新增自适应三档（minimal/standard/reviewed）与「观」结果缓存
 
 /**
  * 是否启用多智能体流水线。
@@ -33,6 +41,105 @@ const MODEL_TUNABLE = ['S1_listen', 'S2_empathy', 'S3_clarify', 'S4_normalize', 
 const ALL_STRATEGIES = ['S0_crisis', 'S1_listen', 'S2_empathy', 'S3_clarify', 'S4_normalize', 'S5_action', 'S6_referral'];
 const EMOTIONS = ['sad', 'anxious', 'angry', 'tired', 'lonely', 'calm', 'neutral', 'relieved', 'hopeful', 'happy', 'grateful'];
 const NEEDS = ['listen', 'understand', 'advice', 'normalize', 'support', 'companionship'];
+
+// ── 自适应档位判定 ─────────────────────────────────────────────
+// 判定依据（只决定「跑几档」，不改变任何安全判定）：
+//   1) L2 / L3：安全第一，必须 standard 以上；L3 更是直接走规则层固定危机协议。
+//   2) L0 且去标点后 ≤6 字：典型寒暄/短应答（嗯、好、谢谢、在吗），信息量不足以支撑
+//      一次「观」的收益，跳过；策略仍由规则层 chooseStrategy 给出，回复形态由 fallbackPlan + shape 提供。
+//   3) L0 且与上一条用户消息相似度 ≥0.9：同一句话的重发/复述，语义信息已在上下文里，跳过「观」。
+//   4) 其余（含 L1 的所有情况、较长的 L0）：走 standard 两段式，保持现有行为。
+const TIER_MINIMAL_MAX_CHARS = 6;      // 去标点后的最大字数
+const TIER_SIMILARITY_THRESHOLD = 0.9; // 与上一条用户消息的相似度阈值
+
+/**
+ * 文本相似度（0—1）：归一化后相等 / 互相包含 / 二元组 Jaccard。
+ * 与记忆模块的口径保持一致（normalizeText 去掉空白、标点与零宽字符）。
+ */
+function textSimilarity(a, b) {
+  try {
+    const na = normalizeText(a);
+    const nb = normalizeText(b);
+    if (!na || !nb) return 0;
+    if (na === nb) return 1;
+    if (na.includes(nb) || nb.includes(na)) return 0.9;
+    const grams = (s) => {
+      const set = new Set();
+      for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
+      if (s.length === 1) set.add(s);
+      return set;
+    };
+    const sa = grams(na);
+    const sb = grams(nb);
+    let inter = 0;
+    for (const g of sa) if (sb.has(g)) inter += 1;
+    const union = sa.size + sb.size - inter;
+    return union > 0 ? inter / union : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+/**
+ * 组装档位结果 { tier, reason }。
+ * 额外挂上非枚举的 toString / valueOf（值 = tier），便于日志与模板字符串直接插值，
+ * 同时不影响 JSON.stringify / 深比较的结果。
+ */
+function tierResult(tier, reason) {
+  const out = { tier, reason };
+  try {
+    Object.defineProperty(out, 'toString', { value: () => tier, enumerable: false });
+    Object.defineProperty(out, 'valueOf', { value: () => tier, enumerable: false });
+  } catch (e) { /* 忽略 */ }
+  return out;
+}
+
+/**
+ * 档位判定：返回 { tier: 'minimal' | 'standard', reason: 可直接展示的中文说明 }。
+ * reviewed 不在本函数决定：它由生成后的本地快检 localScreen() 命中与否决定。
+ * 该函数只读入参、不调用模型、不抛异常；任何异常都退回 standard（现有行为）。
+ */
+function decideTier(input) {
+  try {
+    const o = input || {};
+    const riskLevel = String(o.riskLevel || 'L0');
+    const raw = o.message == null ? '' : String(o.message);
+    const normalized = normalizeText(raw);
+    const charCount = normalized.length;
+
+    // 1) 安全红线：L2 需要完整两段（避免漏掉转介线索），L3 走固定危机协议
+    if (riskLevel === 'L3') {
+      return tierResult('standard', '风险 L3：走规则层固定危机协议，档位不参与（不调用模型）');
+    }
+    if (riskLevel === 'L2') {
+      return tierResult('standard', '风险 L2：需要完整「观」+「书」两段，避免漏掉转介线索');
+    }
+
+    // 2) minimal 的前提是 L0：L1 有持续身心信号，保留「观」以免漏读情绪
+    if (riskLevel === 'L0' && charCount > 0 && charCount <= TIER_MINIMAL_MAX_CHARS) {
+      return tierResult('minimal',
+        '风险 L0，去标点后仅 ' + charCount + ' 字（≤' + TIER_MINIMAL_MAX_CHARS + '），属于寒暄/短应答：跳过「观」，按规则层策略直接回复');
+    }
+
+    // 3) L0 且与上一条用户消息几乎相同（相似度 ≥0.9）→ 复用上一轮语义
+    if (riskLevel === 'L0' && o.lastUserMessage) {
+      const sim = textSimilarity(raw, o.lastUserMessage);
+      if (sim >= TIER_SIMILARITY_THRESHOLD) {
+        return tierResult('minimal',
+          '风险 L0，且与上一条用户消息相似度 ' + sim.toFixed(2) + '（≥' + TIER_SIMILARITY_THRESHOLD + '）：视为同一句话的重发/复述，跳过「观」');
+      }
+    }
+
+    // 4) 其余：标准两段式
+    if (riskLevel === 'L1') {
+      return tierResult('standard', '风险 L1：需要「观」先读出情绪与需求，再落笔');
+    }
+    return tierResult('standard',
+      '风险 L0，去标点后 ' + charCount + ' 字且与上一条不相似：需要「观」先定情绪与回复形态');
+  } catch (e) {
+    return tierResult('standard', '档位判定异常，退回标准「观」+「书」两段式');
+  }
+}
 
 // ── 「观」提示词 ────────────────────────────────────────────────
 const APPRAISE_SYSTEM = '你是一个只输出 JSON 的对话分析师，服务于一个面向大学生的情绪陪伴智能体。';
@@ -126,18 +233,92 @@ function fallbackPlan(ctx, reason) {
   };
 }
 
+// ── 「观」结果缓存（同会话内复用，避免重复调用）────────────────
+// 键为 normalizeText(message)，同一会话上限 20 条（超出按插入顺序淘汰最旧的），
+// 会话数也设上限，避免长时间运行时无界增长。
+const APPRAISE_CACHE_LIMIT = 20;      // 每个会话最多缓存 20 条「观」结果
+const APPRAISE_CACHE_SESSIONS = 50;   // 最多跟踪 50 个会话
+const appraiseCache = new Map();      // sessionId -> Map<normKey, { riskLevel, plan }>
+
+function appraiseCacheKey(message) {
+  try { return normalizeText(message) || String(message == null ? '' : message); } catch (e) { return String(message == null ? '' : message); }
+}
+
+/**
+ * 读取缓存的「观」结果；未命中 / 风险等级不同 / 任何异常都返回 null（调用方自然回退到真实调用）。
+ * 风险等级参与校验：风险变了（如 L0 → L2）不允许复用旧判断。
+ */
+function getCachedPlan(sessionId, message, riskLevel) {
+  try {
+    if (!sessionId) return null;
+    const bucket = appraiseCache.get(sessionId);
+    if (!bucket) return null;
+    const key = appraiseCacheKey(message);
+    const hit = bucket.get(key);
+    if (!hit || !hit.plan) return null;
+    if (hit.riskLevel !== String(riskLevel || 'L0')) return null;
+    // 命中后移到队尾（简单 LRU）
+    bucket.delete(key);
+    bucket.set(key, hit);
+    return Object.assign({}, hit.plan, { cached: true });
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 写入缓存的「观」结果。只缓存成功的（degraded=false）结果：
+ * 失败降级往往来自网络抖动，缓存它会让后续同样的话一直降级。
+ */
+function setCachedPlan(sessionId, message, riskLevel, plan) {
+  try {
+    if (!sessionId || !plan || plan.degraded) return;
+    const key = appraiseCacheKey(message);
+    if (!key) return;
+    let bucket = appraiseCache.get(sessionId);
+    if (!bucket) {
+      bucket = new Map();
+      if (appraiseCache.size >= APPRAISE_CACHE_SESSIONS) {
+        const oldest = appraiseCache.keys().next().value;
+        appraiseCache.delete(oldest);
+      }
+      appraiseCache.set(sessionId, bucket);
+    }
+    if (bucket.has(key)) bucket.delete(key);
+    bucket.set(key, { riskLevel: String(riskLevel || 'L0'), plan });
+    while (bucket.size > APPRAISE_CACHE_LIMIT) {
+      const oldestKey = bucket.keys().next().value;
+      bucket.delete(oldestKey);
+    }
+  } catch (e) { /* 缓存失败不影响主流程 */ }
+}
+
+/** 清空缓存（测试 / 排查用） */
+function clearAppraiseCache(sessionId) {
+  try {
+    if (sessionId) appraiseCache.delete(sessionId);
+    else appraiseCache.clear();
+  } catch (e) { /* 忽略 */ }
+}
+
 /**
  * 「观」：感知 + 定调。失败时返回降级 plan，绝不抛出。
+ * 同会话内相同 message（normalizeText 后）且风险等级相同 → 直接复用缓存，不再调用模型。
  */
 async function appraise(ctx) {
-  if (!agentsEnabled()) return fallbackPlan(ctx, 'agents_off');
+  const c = ctx || {};
+  const cached = getCachedPlan(c.sessionId, c.userText, c.riskLevel);
+  if (cached) return cached;
+  if (!agentsEnabled()) return fallbackPlan(c, 'agents_off');
   try {
-    const res = await callLLM(APPRAISE_SYSTEM, [{ role: 'user', text: buildAppraisePrompt(ctx) }], { retries: 0 });
+    const res = await callLLM(APPRAISE_SYSTEM, [{ role: 'user', text: buildAppraisePrompt(c) }], { retries: 0 });
     const obj = parseJsonObject(res && res.content);
-    if (!obj) return fallbackPlan(ctx, 'bad_json');
-    return normalizePlan(obj, ctx);
+    if (!obj) return fallbackPlan(c, 'bad_json');
+    const plan = normalizePlan(obj, c);
+    setCachedPlan(c.sessionId, c.userText, c.riskLevel, plan);
+    return plan;
   } catch (e) {
-    return fallbackPlan(ctx, (e && e.code) || (e && e.message) || 'error');
+    return fallbackPlan(c, (e && e.code) || (e && e.message) || 'error');
   }
 }
 
@@ -242,11 +423,18 @@ module.exports = {
   agentsEnabled,
   MODEL_TUNABLE,
   AI_CLICHE,
+  TIER_MINIMAL_MAX_CHARS,
+  TIER_SIMILARITY_THRESHOLD,
   buildAppraisePrompt,
   buildCriticPrompt,
   parseJsonObject,
   normalizePlan,
   fallbackPlan,
+  decideTier,
+  textSimilarity,
+  getCachedPlan,
+  setCachedPlan,
+  clearAppraiseCache,
   appraise,
   resolveStrategy,
   localScreen,
