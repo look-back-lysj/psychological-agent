@@ -127,18 +127,4 @@ comebackRouter.get('/', (req, res) => {
   res.json({ ok: true, data: Object.assign({}, data, { demoAvailable: true }) });
 });
 
-// ── 演示模式开关（状态与「回来」共用 data/state.json）────────────
-const demoRouter = express.Router();
-
-demoRouter.get('/', (req, res) => {
-  res.json({ ok: true, data: { enabled: isDemoEnabled() } });
-});
-
-demoRouter.post('/', (req, res) => {
-  const body = req.body && typeof req.body === 'object' ? req.body : {};
-  // 只接受显式 true 才开启，其它情况一律视为关闭
-  const enabled = setDemoEnabled(body.enabled === true);
-  res.json({ ok: true, data: { enabled } });
-});
-
-module.exports = { configRouter, memoryRouter, comebackRouter, demoRouter };
+module.exports = { configRouter, memoryRouter, comebackRouter };

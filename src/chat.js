@@ -16,7 +16,7 @@ const {
   pushPendingTurn, countPendingTurns, drainPendingTurns
 } = require('./sessions');
 const { checkInputSafety, checkOutputSafety } = require('./safety');
-const { chooseStrategy, updateSessionState, buildRoute } = require('./strategy');
+const { chooseStrategy, updateSessionState, buildRoute, updateEngageLadder } = require('./strategy');
 const { buildSystemPrompt, PROMPT_VERSION } = require('./prompts');
 const { PERSONA_VERSION } = require('./persona');
 const { callLLM, callLLMStream, getConfig } = require('./llm');
@@ -170,6 +170,9 @@ function prepareTurn(body) {
   const riskHistory = getRiskHistory(sessionId);
   const inputSafety = checkInputSafety(fullMessage, { riskHistory });
   const state = getState(sessionId);
+  // 先根据这句话推进/退回「开口引导阶梯」，再选策略：
+  // 阶梯进行中会固定走 S1_listen，把邀请一轮一轮递下去，而不是撤回邀请。
+  updateEngageLadder(state, fullMessage, inputSafety.riskLevel);
   const decision = chooseStrategy(fullMessage, inputSafety, state);
   const route = buildRoute(inputSafety.riskLevel, decision, state);
   const explicit = handleExplicitMemory(fullMessage);
@@ -186,13 +189,9 @@ function buildMessages(history) {
  * 有 Key 时永远优先真实模型；任何读取异常都按「不生效」处理，不影响主链路。
  */
 function isDemoActive() {
-  try {
-    if (!isDemoEnabled()) return false;
-    const cfg = getConfig();
-    return !(cfg && cfg.apiKey);
-  } catch (e) {
-    return false;
-  }
+  // 已移除「无 API 模式」：不再提供本地脚本回复。
+  // 没有配置 Key 时，由前端引导用户完成配置；后端只走真实模型路径。
+  return false;
 }
 
 /**
@@ -258,40 +257,12 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
 
   // 免 Key 演示模式：在「观」等任何模型调用之前拦截，返回本地脚本回复。
   // 仍走完整的输出后置检查；失败一律静默，绝不阻塞回复。
-  if (isDemoActive()) {
-    let reply = '';
-    try {
-      reply = demoReply({ message, riskLevel, strategyKey: decision.key, plan: null });
-    } catch (e) {
-      reply = '';
-    }
-    if (!reply) reply = DEMO_FALLBACK;
-    const demoCheck = checkOutputSafety(reply);
-    return {
-      reply: demoCheck.blocked ? demoCheck.fallback : reply,
-      usedModel: false,
-      usage: null,
-      blocked: !!demoCheck.blocked,
-      reason: demoCheck.blocked ? demoCheck.reason : 'demo_script',
-      demo: true,
-      memoriesUsed: [],
-      agent: attachRetryMeta({
-        version: AGENT_VERSION,
-        mode: 'demo_script',
-        strategyKey: decision.key,
-        tier: tierInfo.tier,
-        tier_reason: tierInfo.reason + '；演示模式（无 Key）不调用模型，档位仅作标注'
-      }, ctx)
-    };
-  }
-
-  // 本轮真正注入提示词的记忆（顺序 = 注入顺序，最多 6 条）；异常时为空数组
-  const memoryItems = collectMemories(message);
-  const memoriesUsed = memoryTexts(memoryItems);
-  const memories = memoriesUsed;
+  // 本轮要注入的长期记忆（真正用到哪几条会随回复一起返回给前端）
+  const memories = collectMemories(message);
+  const memoriesUsed = memories.map(m => (typeof m === 'string' ? m : (m && m.text) || '')).filter(Boolean);
+  // 会话级内在状态：心情 / 精力 / 熟悉度 → 转成句长与提问概率等表达约束
   const innerState = getInnerState(sessionId);
 
-  // 自适应档位：minimal 跳过「观」，标准档照旧两段式
   let tier = tierInfo.tier;
   let tierReason = tierInfo.reason;
   let plan = null;
@@ -345,7 +316,8 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
     reason: decision.reason,
     nextHint: decision.nextHint,
     plan,
-    shape
+    shape,
+    engageLevel: ctx.state ? (ctx.state.engageLevel || 0) : 0
   });
   // 关键：当前这句话还没写进会话（在 finalizeTurn 才落库），必须显式追加，
   // 否则模型看不到用户最新的一条消息。

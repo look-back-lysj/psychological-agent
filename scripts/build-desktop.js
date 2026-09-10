@@ -30,7 +30,8 @@ const tIdx = args.indexOf('--target');
 const TARGET = tIdx !== -1 ? args[tIdx + 1] : 'x86_64-pc-windows-gnu';
 
 const BACKEND_EXE = path.join(ROOT, 'dist', '心屿', '心屿.exe');
-const OUT_PORTABLE = path.join(ROOT, 'dist', '心屿桌面版');
+const PRODUCT_NAME = '守岸人';
+const OUT_PORTABLE = path.join(ROOT, 'dist', PRODUCT_NAME + '桌面版');
 
 /** 路径里是否有非 ASCII 字符（含中文） */
 function hasNonAscii(p) {
@@ -248,7 +249,7 @@ if (!isDev) {
   console.log('⑤ 回收产物到 dist/ …');
   fs.mkdirSync(OUT_PORTABLE, { recursive: true });
   const copies = [
-    [pick('xinyu.exe'), path.join(OUT_PORTABLE, '心屿.exe')],
+    [pick('xinyu.exe'), path.join(OUT_PORTABLE, PRODUCT_NAME + '.exe')],
     [pick('xinyu-backend.exe'), path.join(OUT_PORTABLE, 'xinyu-backend.exe')],
     [pick('WebView2Loader.dll'), path.join(OUT_PORTABLE, 'WebView2Loader.dll')]
   ];

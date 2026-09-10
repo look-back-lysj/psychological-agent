@@ -20,7 +20,7 @@ if (!fs.existsSync(publicDir)) {
 
 // 静态 require，便于 pkg 在打包时自动收集依赖
 const chatRoute = require('./src/chat');
-const { configRouter, memoryRouter, comebackRouter, demoRouter } = require('./src/routes');
+const { configRouter, memoryRouter, comebackRouter } = require('./src/routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,7 +31,6 @@ app.use('/api/chat', chatRoute);
 app.use('/api/config', configRouter);
 app.use('/api/memory', memoryRouter);
 app.use('/api/comeback', comebackRouter);
-app.use('/api/demo', demoRouter);
 
 app.get('/api/health', (req, res) => {
   let cfg = { model: '', configured: false };
@@ -58,7 +57,7 @@ app.listen(PORT, () => {
   const url = `http://localhost:${PORT}`;
   console.log('');
   console.log('  ╔══════════════════════════════════════╗');
-  console.log('  ║  心屿 · 大学生情绪陪伴助手          ║');
+  console.log('  ║  守岸人 · 情绪陪伴          ║');
   console.log('  ╚══════════════════════════════════════╝');
   console.log('');
   console.log(`  服务已启动：${url}`);

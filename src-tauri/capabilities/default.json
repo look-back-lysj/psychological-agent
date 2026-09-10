@@ -1,10 +1,19 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "心屿桌面外壳的默认权限：核心能力 + 启动本地后端 sidecar",
+  "description": "守岸人桌面外壳：核心能力 + 启动本地后端 sidecar + 窗口控制（最小化/最大化/关闭/拖拽）",
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close",
+    "core:window:allow-destroy",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-focus",
     {
       "identifier": "shell:allow-execute",
       "allow": [

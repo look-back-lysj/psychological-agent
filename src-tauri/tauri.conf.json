@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "心屿",
-  "version": "2.0.0",
+  "productName": "守岸人",
+  "version": "2.1.0",
   "identifier": "com.xinyu.companion",
   "build": {
     "frontendDist": "splash",
@@ -12,14 +12,14 @@
     "windows": [
       {
         "label": "main",
-        "title": "心屿 · 情绪陪伴",
+        "title": "守岸人 · 情绪陪伴",
         "width": 1200,
         "height": 840,
         "minWidth": 960,
         "minHeight": 640,
         "center": true,
         "resizable": true,
-        "decorations": false,
+        "decorations": true,
         "fullscreen": false,
         "visible": true,
         "dragDropEnabled": false

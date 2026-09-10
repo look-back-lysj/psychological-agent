@@ -46,7 +46,12 @@ function toNumber(raw) {
 
 function parseApiKey(raw) {
   if (typeof raw !== 'string') return { ok: false, message: 'API Key 必须是字符串。' };
-  const value = raw.trim(); // 空字符串表示清除
+  // 容错：用户常常整行粘贴，这里自动剥掉常见的前后缀，降低填写门槛
+  let value = raw.trim();
+  if (!value) return { ok: true, value: '' }; // 空字符串表示清除
+  value = value.replace(/^export\s+/i, '');                    // export LLM_API_KEY=...
+  value = value.replace(/^(set\s+)?[A-Z_]*API[_-]?KEY\s*=\s*/i, ''); // LLM_API_KEY=sk-...
+  value = value.replace(/^["'`\s]+|[\s"'`,;]+$/g, '');         // 包裹的引号 / 结尾逗号
   if (value.length > MAX_KEY_LENGTH) return { ok: false, message: 'API Key 长度异常，请检查是否粘贴了多余内容。' };
   return { ok: true, value };
 }

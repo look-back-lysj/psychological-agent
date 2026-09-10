@@ -2315,9 +2315,9 @@
         maybeAutoDisableDemo(); // 用户后来补了 Key：自动退出演示模式
       } else {
         setHealth('error', '模型未配置', '模型：未配置');
-        setHidden(el.modelWarn, !!demoEnabled);
-        // 首次进入且用户没有主动跳过时，引导配置；演示模式开启时不再强制打断
-        if (!isSetupDismissed() && !isWizardOpen() && !activeDrawer && !demoEnabled) openWizard(1);
+        setHidden(el.modelWarn, false);
+        // 没有 Key 时直接引导用户完成配置（这是唯一的使用路径）
+        if (!isSetupDismissed() && !isWizardOpen() && !activeDrawer) openWizard(1);
       }
       syncDemoUI();
       return data;
@@ -2531,33 +2531,22 @@
   }
 
   function syncDemoUI() {
-    // 演示模式没有真实记忆：状态变化时同步隐藏 / 恢复「用到了」提示
-    if (demoApplied !== demoEnabled) {
-      demoApplied = demoEnabled;
+    // 演示模式已移除：入口永远隐藏，「用到了」提示按真实记忆渲染
+    if (el.demoEntry) setHidden(el.demoEntry, true);
+    if (demoApplied !== false) {
+      demoApplied = false;
       try { refreshUsedRows(); } catch (e) { /* 忽略 */ }
     }
-    if (el.demoEntryText) {
-      el.demoEntryText.textContent = demoEnabled ? DEMO_ENTRY_ON_TEXT : DEMO_ENTRY_OFF_TEXT;
-    }
-    const configured = isConfiguredState();
-    // 只在「确认未配置 Key」或「演示模式已开启」时露出入口
-    const visible = demoCapable && (configured === false || demoEnabled);
-    setHidden(el.demoEntry, !visible);
-    if (demoEnabled) {
-      setHidden(el.modelWarn, true);
-      applyDemoPill();
-    }
-    return visible;
+    return false;
   }
 
+  // 已移除「无 API 模式」：不再提供本地脚本回复。
+  // 没有配置 Key 时，直接引导用户完成配置（见 checkHealth 里的 openWizard）。
   async function loadDemo() {
-    const data = await fetchDataWithTimeout('/api/demo', { method: 'GET' }, DEMO_TIMEOUT_MS);
-    if (data && typeof data === 'object') {
-      demoCapable = true;
-      demoEnabled = data.enabled === true;
-    }
+    demoCapable = false;
+    demoEnabled = false;
     syncDemoUI();
-    return data || null;
+    return null;
   }
 
   async function toggleDemoFromEntry() {
@@ -3564,10 +3553,14 @@
   function callWindow(method) {
     const win = tauriWindow;
     if (!win || typeof win[method] !== 'function') return;
+    const warn = function () {
+      // 兜底：窗口控制被系统/权限拦下时，至少告诉用户还能怎么关
+      if (typeof toast === 'function') toast('窗口控制不可用，可以用 Alt+F4 关闭窗口', 'error');
+    };
     try {
       const result = win[method]();
-      if (result && typeof result.catch === 'function') result.catch(function () { /* 忽略 */ });
-    } catch (e) { /* 忽略 */ }
+      if (result && typeof result.catch === 'function') result.catch(warn);
+    } catch (e) { warn(); }
   }
 
   // 最大化 / 还原时同步按钮图标与 aria-label
@@ -3606,9 +3599,12 @@
   }
 
   function initDesktopShell() {
-    if (!window.__TAURI__) return; // 浏览器：不显示标题栏
-    document.documentElement.classList.add('is-tauri');
-    if (el.titlebar) setHidden(el.titlebar, false);
+    if (!window.__TAURI__) return; // 浏览器：不做任何事
+    // 改用系统原生标题栏：最小化 / 最大化 / 关闭由操作系统提供，最可靠。
+    // 自定义标题栏保留在 DOM 里但不再显示（无边框模式下按钮一旦失效会导致窗口关不掉）。
+    document.documentElement.classList.add('is-tauri-native');
+    return;
+    // eslint-disable-next-line no-unreachable
     const ref = tauriWindowRef();
     if (!ref) return;
     Promise.resolve(ref).then(function (win) {

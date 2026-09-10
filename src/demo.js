@@ -15,12 +15,17 @@ const { CRISIS_REPLY } = require('./safety');
 
 // ── 开关：data/state.json 的 demoEnabled 字段 ───────────────────
 
-/** 演示模式是否已开启；读取失败视为未开启。 */
+/**
+ * 演示模式是否可用。
+ * **默认为开**：没有配置 API Key 时，用户打开应用就应该能直接聊，
+ * 而不是先被一个设置向导拦住。只有当用户显式关闭过（demoEnabled === false）
+ * 或读取状态失败且明确写过关闭时，才视为关闭。
+ */
 function isDemoEnabled() {
   try {
-    return readState().demoEnabled === true;
+    return readState().demoEnabled !== false;
   } catch (e) {
-    return false;
+    return true; // 读不到状态时也默认可用，保证「开箱能用」
   }
 }
 
@@ -38,6 +43,22 @@ function setDemoEnabled(enabled) {
   } catch (e) {
     return false;
   }
+}
+
+// ── 开口引导阶梯话术（L1—L6）──────────────────────────────────
+// 依据 _tmp/research-engagement.md：动机式访谈的复杂反映 + 自主支持式邀请。
+// 语气守守岸人：短句、零感叹号、不承诺保密与效果。
+const ENGAGE_REPLIES = {
+  1: ['嗯。我在。', '不用现在说。我不走。', '我在这儿。'],
+  2: ['「算了」这两个字，听着挺累的。', '不是没话说。是不想再解释一遍。', '你把它按住了。按着也挺费劲的。'],
+  3: ['不讲事情也行。讲讲现在身上哪儿紧。', '一句话就够：现在是烦，还是累？', '从最小的说起——今天有没有哪一刻稍微松一点。'],
+  4: ['先说事，还是先说现在的滋味？', '想让我听着，还是想让我帮你想一下？', '要不我猜一个，你点头摇头就行。'],
+  5: ['很多人这个时候都说不出口。不是不想，是太满了。', '这种话，最难对认识的人讲。', '一时说不出口，很正常。'],
+  6: ['我愿意听。你不说也可以。', '你想说的时候再说。我在。', '不着急。这段路先陪你走一小段。']
+};
+
+function pickFrom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)] || arr[0];
 }
 
 // ── 脚本化回复库（每个策略 4—5 条）──────────────────────────────
@@ -127,6 +148,10 @@ function demoReply(params) {
     // L3：绝不走演示话术，与线上完全一致的固定危机引导
     if (risk === 'L3') return CRISIS_REPLY;
 
+    // 开口引导阶梯优先：对方还在门口时，用阶梯话术而不是通用脚本
+    const lv = Number(ctx.engageLevel) || 0;
+    if (lv >= 1 && lv <= 6 && ENGAGE_REPLIES[lv]) return pickFrom(ENGAGE_REPLIES[lv]);
+
     // 策略键：优先规则层，其次「观」给出的提示
     let key = normalizeStrategy(ctx.strategyKey);
     if (!key && ctx.plan) {
@@ -147,4 +172,4 @@ function demoReply(params) {
   }
 }
 
-module.exports = { isDemoEnabled, setDemoEnabled, demoReply };
+module.exports = { isDemoEnabled, setDemoEnabled, demoReply, ENGAGE_REPLIES };

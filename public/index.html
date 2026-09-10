@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#5b8def" />
-  <meta name="description" content="心屿 · 面向大学生的非诊疗情绪陪伴助手" />
-  <title>心屿 · 大学生情绪陪伴助手</title>
+  <meta name="description" content="守岸人 · 面向大学生的非诊疗情绪陪伴助手" />
+  <title>守岸人 · 情绪陪伴</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%235b8def'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23fff'/%3E%3C/svg%3E" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -17,7 +17,7 @@
   <header class="titlebar" id="titlebar" aria-label="窗口标题栏" hidden>
     <div class="titlebar__brand" data-tauri-drag-region>
       <span class="titlebar__mark" aria-hidden="true"></span>
-      <span class="titlebar__name">心屿</span>
+      <span class="titlebar__name">守岸人</span>
     </div>
     <div class="titlebar__drag" data-tauri-drag-region aria-hidden="true"></div>
     <div class="titlebar__controls" role="group" aria-label="窗口控制">
@@ -67,7 +67,7 @@
       <div class="sidebar__head">
         <div class="brand">
           <span class="brand__mark" aria-hidden="true"></span>
-          <span class="brand__name">心屿</span>
+          <span class="brand__name">守岸人</span>
         </div>
         <button class="icon-btn sidebar__close" id="sidebar-close" type="button" aria-label="收起侧边栏">
           <svg class="icon"><use href="#i-close" /></svg>
@@ -116,7 +116,7 @@
           <p id="chat-subtitle">非诊疗情绪陪伴 · 记录只保存在本机浏览器</p>
         </div>
         <div class="topbar__actions">
-          <button class="pill pill--warn" id="model-warn" type="button" hidden>未配置模型</button>
+          <button class="pill pill--warn" id="model-warn" type="button" hidden title="当前为演示模式：回复由本地脚本生成。填入 API Key 即可与真实模型对话">填入 API Key</button>
           <button class="icon-btn is-compact" id="debug-toggle" type="button" aria-pressed="false" aria-label="调试面板开关" title="调试面板（显示策略路由）">
             <svg class="icon"><use href="#i-debug" /></svg>
           </button>
@@ -187,7 +187,7 @@
       <header class="wizard__head">
         <div class="wizard__brand">
           <span class="wizard__mark" aria-hidden="true">屿</span>
-          <span class="wizard__title" id="wizard-title">开始使用心屿</span>
+          <span class="wizard__title" id="wizard-title">开始使用守岸人</span>
         </div>
         <div class="wizard__dots" id="wizard-dots" aria-hidden="true">
           <i class="is-active"></i><i></i><i></i>
@@ -197,7 +197,7 @@
       <div class="wizard__body">
         <!-- 第 1 步：欢迎与免责声明 -->
         <section class="wizard__step is-active" data-step="1">
-          <h2 class="wizard__h">你好，我是心屿</h2>
+          <h2 class="wizard__h">你好，我是守岸人</h2>
           <p class="wizard__p">一个面向大学生的<strong>非诊疗</strong>情绪陪伴助手。你可以聊聊最近的压力、心情，或者只是想找个人说说话。</p>
           <div class="notice">
             <p class="notice__title">在开始之前，请先知道</p>
@@ -213,7 +213,7 @@
         <!-- 第 2 步：获取 Key -->
         <section class="wizard__step" data-step="2">
           <h2 class="wizard__h">先拿到一把 API Key</h2>
-          <p class="wizard__p">心屿需要一个模型服务来生成回复。推荐 DeepSeek，注册和调用都在网页上完成。</p>
+          <p class="wizard__p">守岸人需要一个模型服务来生成回复。推荐 DeepSeek，注册和调用都在网页上完成。</p>
           <ol class="steps">
             <li class="steps__item">
               <span class="steps__num">1</span>
@@ -393,7 +393,7 @@
         <span class="mem-head__hint" id="memory-updated"></span>
       </div>
 
-      <p class="mem-empty" id="memory-empty" hidden>还没有记住任何内容。聊到对陪伴有用的稳定事实时，心屿会试着记下来，你也可以在上面手动添加。</p>
+      <p class="mem-empty" id="memory-empty" hidden>还没有记住任何内容。聊到对陪伴有用的稳定事实时，守岸人会试着记下来，你也可以在上面手动添加。</p>
       <ul class="mem-list" id="memory-list"></ul>
     </div>
     <footer class="drawer__foot drawer__foot--split">
@@ -441,13 +441,13 @@
 
   <dialog class="modal" id="about-modal" aria-labelledby="about-title">
     <div class="modal__head">
-      <h2 id="about-title">关于心屿</h2>
+      <h2 id="about-title">关于守岸人</h2>
       <button class="icon-btn" id="about-close" type="button" aria-label="关闭">
         <svg class="icon"><use href="#i-close" /></svg>
       </button>
     </div>
     <div class="modal__body">
-      <p><strong>心屿</strong>是一个面向大学生日常学习压力、情绪低落和表达困难场景的<strong>非诊疗</strong>情绪陪伴原型。</p>
+      <p><strong>守岸人</strong>是一个面向大学生日常学习压力、情绪低落和表达困难场景的<strong>非诊疗</strong>情绪陪伴原型。</p>
       <h3>它会做什么</h3>
       <ul>
         <li>先判断你此刻更需要哪种沟通方式（陪伴、共情、澄清或一起想办法）；</li>

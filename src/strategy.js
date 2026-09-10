@@ -68,6 +68,24 @@ const SIGNAL_RULES = [
   }
 ];
 
+// ── 开口引导阶梯（L1—L6）──────────────────────────────────────
+// 依据：动机式访谈（Miller & Rollnick）的复杂反映与自主支持式邀请；
+// 诊断：只说「允许沉默」会被体验成「撤回邀请」——尊重停在信息层，关系层什么都没留下。
+const ENGAGE_LADDER = {
+  1: '不退场（允许沉默 ＋ 明确「我在」）',
+  2: '观察式反映（把「不想说」这句话本身当内容来反映）',
+  3: '降门槛（给一个极小的开口：此刻、身体、一个词）',
+  4: '提供选择（二选一，不问开放题）',
+  5: '正常化（承认这件事难说，而不是安慰）',
+  6: '明确邀请 ＋ 留退路（把选择权交回对方）'
+};
+
+// 关门话：对方在退出话题，但人还在对话里
+const REFUSAL_WORDS = [
+  '不想说', '算了', '没什么', '别问', '不想聊', '不想讲', '说了也没用',
+  '你不会懂', '不想提', '没话说', '别管我', '不想说话', '懒得说', '就这样吧'
+];
+
 // 情绪温度词表
 const EMOTION_STRONG = ['崩溃', '撑不住', '绝望', '受不了', '活不下去', '不想活', '太痛苦',
   '窒息', '扛不住', '活得好累', '没有意义', '解脱', '消失'];
@@ -83,6 +101,8 @@ function createSessionState() {
     streak: 0,             // 同一策略连续次数
     strategyHistory: [],   // 最近使用的策略
     askCount: 0,           // 当前话题上连续追问次数
+    engageLevel: 0,        // 开口引导阶梯当前级（0=未进入）
+    engageRise: 0,         // 本次进入阶梯后连续上升次数（上限 2）
     topic: '',             // 当前话题关键词（粗略）
     emotion: 3,            // 情绪温度 1—5
     riskHistory: []        // 最近风险等级
@@ -107,6 +127,40 @@ function estimateEmotion(text, riskLevel) {
   if (riskLevel === 'L2') score = Math.max(score, 4);
   if (riskLevel === 'L1') score = Math.max(score, 3);
   return clamp(Math.round(score), 1, 5);
+}
+
+/**
+ * 更新「开口引导阶梯」。
+ * 规则（来自研究稿）：每轮最多升一级；对方拒绝就退一级；最多连续升两级；
+ * 一旦对方开始正经说话，就退出阶梯（不再把他当"不愿开口的人"对待）。
+ */
+function updateEngageLadder(state, text, riskLevel) {
+  const st = state || createSessionState();
+  if (riskLevel === 'L3') { st.engageLevel = 0; st.engageRise = 0; return st; }
+  const n = normalizeText(text);
+  const isRefusal = REFUSAL_WORDS.some(w => n.includes(normalizeText(w)));
+  // 已经愿意讲：长度够长、或出现「开口词」时，退出阶梯
+  const OPENING_WORDS = ['其实', '就是', '因为', '我觉得', '我发现', '那件事', '说起来'];
+  const hasOpening = OPENING_WORDS.some(w => n.indexOf(w) !== -1);
+  if (!isRefusal && (n.length >= 10 || hasOpening)) { st.engageLevel = 0; st.engageRise = 0; return st; }
+
+  if (isRefusal) {
+    // 首次出现关门话：从 L2 起（先反映这句话本身）
+    st.engageLevel = st.engageLevel === 0 ? 2 : Math.max(1, st.engageLevel - 1);
+    st.engageRise = 0;
+    return st;
+  }
+  // 极短回应（嗯／还行／不知道）且有回应意愿：尝试升一级，但最多连续升两级
+  if (n.length <= 8 && st.engageLevel >= 1) {
+    if (st.engageRise < 2) { st.engageLevel = Math.min(6, st.engageLevel + 1); st.engageRise += 1; }
+    else { st.engageRise = 0; } // 停留一轮
+  }
+  return st;
+}
+
+/** 当前阶梯级的中文说明（给提示词用） */
+function describeEngageLevel(level) {
+  return ENGAGE_LADDER[level] || '';
 }
 
 function scoreStrategies(text) {
@@ -162,6 +216,13 @@ function chooseStrategy(text, inputSafety, sessionState) {
     return make('S6_referral', 0.78,
       '出现反复或持续的困扰信号，适合温和提供现实中的支持选项。',
       '把专业帮助说成一种可选资源，不施压、不贴标签。', 0);
+  }
+
+  // 开口引导阶梯进行中：除非风险升级，否则继续用陪伴倾听把邀请递下去
+  if (st.engageLevel >= 1 && (risk === 'L0' || risk === 'L1')) {
+    return make('S1_listen', 0.8,
+      '对方还在门口（第 ' + st.engageLevel + ' 级：' + describeEngageLevel(st.engageLevel) + '），继续把邀请递下去，而不是撤回邀请。',
+      '按当前级说话：每轮只升一级；对方不接就退回一级；始终留一句「我在」。', 0);
   }
 
   const scored = scoreStrategies(text);
@@ -265,6 +326,7 @@ function buildRoute(riskLevel, decision, state) {
     ask_count: state ? state.askCount : 0,
     emotion_temperature: decision ? decision.emotionTemperature : 3,
     turn: state ? state.turns : 0,
+    engage_level: state ? (state.engageLevel || 0) : 0,
     strategy_streak: state ? state.streak : 0
   };
 }
@@ -276,6 +338,9 @@ module.exports = {
   SIGNAL_RULES,
   createSessionState,
   estimateEmotion,
+  updateEngageLadder,
+  describeEngageLevel,
+  ENGAGE_LADDER,
   chooseStrategy,
   updateSessionState,
   buildRoute

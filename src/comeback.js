@@ -27,7 +27,8 @@ const DAY_MS = 86400000;
 // ── 本地状态：读 / 写（与 demo.js 共用，失败一律静默）───────────
 
 function emptyState() {
-  return { lastSeenAt: null, visitCount: 0, firstSeenAt: null, demoEnabled: false };
+  // demoEnabled 默认为 true：没有 Key 时打开就能用（用户显式关闭后才为 false）
+  return { lastSeenAt: null, visitCount: 0, firstSeenAt: null, demoEnabled: true };
 }
 
 /** state.json 的绝对路径；dataDir() 不可用时返回 null。 */
@@ -49,7 +50,7 @@ function normalizeState(raw) {
   out.lastSeenAt = Number.isFinite(lastSeen) && lastSeen > 0 ? lastSeen : null;
   out.firstSeenAt = Number.isFinite(firstSeen) && firstSeen > 0 ? firstSeen : null;
   out.visitCount = Number.isFinite(visits) && visits > 0 ? Math.floor(visits) : 0;
-  out.demoEnabled = raw.demoEnabled === true;
+  out.demoEnabled = raw.demoEnabled !== false; // 只有显式 false 才算关闭
   return out;
 }
 
@@ -128,10 +129,10 @@ function pickMemoryHighlights() {
 // 共 30 条，按「首次 / 时段 / 间隔长短 / 有无记忆」组合；{memory} 为记忆占位符。
 const GREETING = {
   first: [
-    '我是心屿。你可以先坐一会儿，不用急着说什么。',
-    '我是心屿。这里没有要完成的事，慢慢来就好。',
-    '我是心屿。不用先想好第一句话，停一会儿也可以。',
-    '我是心屿。你想说多少都可以，不用有负担。'
+    '我是守岸人。你可以先坐一会儿，不用急着说什么。',
+    '我是守岸人。这里没有要完成的事，慢慢来就好。',
+    '我是守岸人。不用先想好第一句话，停一会儿也可以。',
+    '我是守岸人。你想说多少都可以，不用有负担。'
   ],
   lateNight: [
     '这么晚还醒着。先说说你现在是什么状态就好。',
