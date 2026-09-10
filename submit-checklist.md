@@ -10,7 +10,8 @@
 - [x] 诊断请求不返回疾病结论；
 - [x] 模型未配置或失败时有友好兜底；
 - [x] `npm test` 通过（9/9）；
-- [x] `npm run bundle` 可生成发布目录；`npm run build` 可生成 exe。
+- [x] `npm run bundle` 可生成发布目录；`npm run build` 可生成 exe；
+- [x] 界面截图已归档到 `docs/screenshots/`，并在 README 中引用。
 
 ## 安全与仓库卫生
 
