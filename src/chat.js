@@ -1,11 +1,8 @@
 /**
- * 心屿 · 对话主链路
+ * 守岸人 · 对话主链路
  *
  * 流程：输入 → 前置安全分级(L0—L3) → 策略路由(S0—S6) → 组装提示词(人设+策略+安全+记忆)
  *      → 调用模型 → 后置输出检查 → 返回；全过程写脱敏日志、异步抽取长期记忆。
- *
- * 免 Key 演示模式（src/demo.js）：已开启演示且没有 API Key 时，在调用模型之前
- * 改走本地脚本回复，返回体带 demo: true 诚实标注；有 Key 时永远优先真实模型。
  */
 
 const express = require('express');
@@ -25,7 +22,6 @@ const { AGENT_VERSION, appraise, resolveStrategy, localScreen, review,
   decideTier, fallbackPlan, getCachedPlan } = require('./agents');
 const { describeInnerState, updateInnerState, replyShape } = require('./innerstate');
 const { logCall } = require('./logger');
-const { isDemoEnabled, demoReply } = require('./demo');
 
 const router = express.Router();
 const FAKE_SESSION_PREFIX = 's_';
@@ -33,7 +29,6 @@ const NL = String.fromCharCode(10);
 
 const ERROR_FALLBACK = '我这边刚才没有接上，但你的话我已经听到了。可以点「重试」再来一次；如果想继续，也可以先慢慢说说现在最想聊的那件事。';
 const CRISIS_FALLBACK = '我很在意你现在的状态。请先远离身边可能伤害到自己的东西，然后联系一个此刻能陪着你的人；如果情况紧急，请直接联系当地紧急服务。';
-const DEMO_FALLBACK = '嗯，我在听。你可以慢慢说，也可以先停在这里。';
 
 const EXTRACT_EVERY_TURNS = 3;   // 每 3 轮批量抽取一次长期记忆（省额度）
 const extracting = new Set();    // 正在抽取的会话，避免并发
@@ -87,7 +82,7 @@ function scheduleMemoryExtraction(sessionId) {
   if (!cfg.apiKey) return;
   extracting.add(sessionId);
   const turns = drainPendingTurns(sessionId);
-  const convo = turns.map(t => '用户：' + t.user + NL + '心屿：' + t.assistant).join(NL + NL);
+  const convo = turns.map(t => '用户：' + t.user + NL + '守岸人：' + t.assistant).join(NL + NL);
   memory.extractFromTurn({
     userText: convo.slice(0, 1500),
     assistantText: '',
@@ -182,16 +177,6 @@ function prepareTurn(body) {
 
 function buildMessages(history) {
   return history.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', text: m.text }));
-}
-
-/**
- * 演示模式是否真正生效：用户已开启演示 且 当前没有可用 API Key。
- * 有 Key 时永远优先真实模型；任何读取异常都按「不生效」处理，不影响主链路。
- */
-function isDemoActive() {
-  // 已移除「无 API 模式」：不再提供本地脚本回复。
-  // 没有配置 Key 时，由前端引导用户完成配置；后端只走真实模型路径。
-  return false;
 }
 
 /**
@@ -392,15 +377,12 @@ function finalizeTurn(ctx, result, t0) {
     sessionId,
     strategy: decision.key,
     riskLevel: inputSafety.riskLevel,
-    event: result.demo
-      ? 'demo_reply'
-      : (result.blocked ? 'output_blocked' : (inputSafety.riskLevel === 'L3' ? 'crisis_protocol' : 'llm_call')),
+    event: result.blocked ? 'output_blocked' : (inputSafety.riskLevel === 'L3' ? 'crisis_protocol' : 'llm_call'),
     model: getConfig().model,
     inputLength: message.length,
     latencyMs: Date.now() - t0,
     ok: true,
     meta: {
-      demo: result.demo === true,
       blocked: !!result.blocked,
       reason: result.reason,
       usage: result.usage,
@@ -428,8 +410,6 @@ function successPayload(ctx, result) {
     sessionId: ctx.sessionId,
     requestId: ctx.requestId,
     blocked: !!result.blocked,
-    // 诚实标注：演示模式生成的回复不属于真实模型输出
-    demo: result.demo === true,
     agent: result.agent || null,
     // 本轮真正注入提示词的记忆文本（最多 6 条，按注入顺序）；无记忆时为空数组
     memoriesUsed: Array.isArray(result.memoriesUsed) ? result.memoriesUsed : [],
@@ -504,6 +484,8 @@ router.post('/stream', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
+  // SSE 要在写事件之前尽早把响应头刷给客户端：不调用 flushHeaders() 时首字节可能被缓冲，
+  // 前端迟迟收不到任何数据，表现为「首字延迟」变长。
   if (res.flushHeaders) res.flushHeaders();
 
   let finished = false;
@@ -557,9 +539,7 @@ router.post('/stream', async (req, res) => {
       strategyLabel: ctx.decision.label,
       riskLevel: ctx.inputSafety.riskLevel,
       route: ctx.route,
-      memoryCount: collectMemoryCountSafe(ctx.message),
-      // 演示模式是否生效（有 Key 时永远为 false）
-      demo: isDemoActive()
+      memoryCount: collectMemoryCountSafe(ctx.message)
     });
 
     // 先完整取回模型输出并做安全检查，确认安全后再流式下发
@@ -583,8 +563,6 @@ router.post('/stream', async (req, res) => {
       route: ctx.route,
       sessionId: ctx.sessionId,
       blocked: !!result.blocked,
-      // 诚实标注：演示模式生成的回复不属于真实模型输出
-      demo: result.demo === true,
       agent: result.agent || null,
       // 本轮真正注入提示词的记忆文本（最多 6 条，按注入顺序）
       memoriesUsed: Array.isArray(result.memoriesUsed) ? result.memoriesUsed : [],
@@ -620,7 +598,6 @@ router.post('/stream', async (req, res) => {
       route: ctx.route,
       sessionId: ctx.sessionId,
       blocked: false,
-      demo: false,
       error: friendlyMessage(e),
       memoriesUsed: []
     });

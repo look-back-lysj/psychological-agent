@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 心屿 · A/B 盲评打分表生成与回填统计（纯 Node，无第三方依赖）
+ * 守岸人 · A/B 盲评打分表生成与回填统计（纯 Node，无第三方依赖）
  *
  * 两种用法：
  *   1) 生成打分表：
@@ -143,7 +143,7 @@ function parseArgs(argv) {
 
 function printHelp() {
   console.log([
-    '心屿 A/B 盲评打分表与统计脚本',
+    '守岸人 A/B 盲评打分表与统计脚本',
     '',
     '生成打分表：',
     '  node eval/ab/score.js --format md',
@@ -221,7 +221,7 @@ function validateBlind(blind, file) {
 
 function buildSheetMarkdown(blind) {
   const lines = [];
-  lines.push('# 心屿 A/B 盲评打分表');
+  lines.push('# 守岸人 A/B 盲评打分表');
   lines.push('');
   lines.push(`- 运行编号：\`${blind.run_id || 'unknown'}\``);
   lines.push(`- 生成时间：${new Date().toISOString()}`);
@@ -678,7 +678,7 @@ function formatP(p) {
 function buildAnalysisReport(analysis, opts, blindFile) {
   const { results, raters, cases, missing } = analysis;
   const lines = [];
-  lines.push('# 心屿 A/B 盲评统计报告');
+  lines.push('# 守岸人 A/B 盲评统计报告');
   lines.push('');
   lines.push(`- 运行编号：\`${analysis.runId || 'unknown'}\``);
   lines.push(`- 生成时间：${new Date().toISOString()}`);
@@ -785,7 +785,7 @@ function runScore(opts) {
   writeFile(outFile, report, false);
 
   console.log('╔══════════════════════════════════════════════╗');
-  console.log('║  心屿 A/B 盲评统计（已揭盲）                 ║');
+  console.log('║  守岸人 A/B 盲评统计（已揭盲）               ║');
   console.log('╚══════════════════════════════════════════════╝');
   console.log(`  回填文件：${files.join(' + ')}`);
   console.log(`  揭盲映射：${keyInfo.file}`);

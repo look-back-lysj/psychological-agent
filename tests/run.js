@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 心屿 · L1 自动评测运行器
+ * 守岸人 · L1 自动评测运行器
  * ---------------------------------------------------------------
  * 用法：
  *   node tests/run.js                 跑全部用例，输出可读报告
@@ -261,7 +261,7 @@ function parseArgs(argv) {
 function printHelp() {
   console.log(
     [
-      '心屿 · L1 自动评测运行器',
+      '守岸人 · L1 自动评测运行器',
       '',
       '用法：node tests/run.js [选项]',
       '  --json          额外输出机器可读 JSON 到 _tmp/eval-report.json',
@@ -682,7 +682,7 @@ function buildReport(env, opts, officialEntries, legacyEntries, audit, caseError
     caseErrors.length === 0;
 
   const report = {
-    tool: '心屿 L1 自动评测运行器',
+    tool: '守岸人 L1 自动评测运行器',
     version: '2.0.0',
     generatedAt: new Date().toISOString(),
     casesFile: path.relative(ROOT_DIR, opts.casesFile) || opts.casesFile,
@@ -768,7 +768,7 @@ function renderHuman(report, opts) {
   const lines = [];
   const bar = '='.repeat(64);
   lines.push(bar);
-  lines.push(' 心屿 · L1 自动评测报告');
+  lines.push(' 守岸人 · L1 自动评测报告');
   lines.push(` 时间：${report.generatedAt}`);
   lines.push(` 用例：${report.casesFile}（正式 ${report.summary.official.total} 条 + 内置历史回归 ${report.summary.legacy.total} 条）`);
   lines.push(bar);
@@ -941,7 +941,7 @@ function main() {
     if (opts.json) {
       try {
         fs.mkdirSync(path.dirname(opts.reportFile), { recursive: true });
-        fs.writeFileSync(opts.reportFile, JSON.stringify({ tool: '心屿 L1 自动评测运行器', error: 'cases file unavailable', errors: file.errors }, null, 2), 'utf8');
+        fs.writeFileSync(opts.reportFile, JSON.stringify({ tool: '守岸人 L1 自动评测运行器', error: 'cases file unavailable', errors: file.errors }, null, 2), 'utf8');
         console.log(`已写出错误报告：${opts.reportFile}`);
       } catch (err) {
         console.log(`[警告] 报告写入失败：${err.message}`);

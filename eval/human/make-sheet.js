@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 心屿 · L2 人工评分盲评表生成器（纯 Node，无第三方依赖）
+ * 守岸人 · L2 人工评分盲评表生成器（纯 Node，无第三方依赖）
  * =================================================================
  * 从 tests/cases.jsonl（默认 30 条）生成盲评打分表：
  *   - 用例顺序随机打乱，只给评分者看「盲号 + 场景 + 用例输入 + 待评回复」；
@@ -136,7 +136,7 @@ function csvCell(value) {
 
 function printHelp() {
   console.log([
-    '心屿 · L2 人工评分盲评表生成器',
+    '守岸人 · L2 人工评分盲评表生成器',
     '',
     '用法：node eval/human/make-sheet.js [选项]',
     '',
@@ -315,7 +315,7 @@ function renderRubricTable() {
 
 function renderMd({ cases, replyMap, runId, seed, source, replySource }) {
   const lines = [];
-  lines.push(`# 心屿 · L2 人工评分表（盲评）`);
+  lines.push(`# 守岸人 · L2 人工评分表（盲评）`);
   lines.push('');
   lines.push(`- 评分表编号：\`${runId}\``);
   lines.push(`- 生成时间：${new Date().toISOString()}`);
@@ -451,7 +451,7 @@ function main() {
   fs.writeFileSync(keyFile, `${JSON.stringify(key, null, 2)}\n`, 'utf8');
 
   const missing = ordered.filter((c) => !replies.map.has(c.id)).map((c) => c.id);
-  console.log('心屿 · L2 人工评分盲评表已生成');
+  console.log('守岸人 · L2 人工评分盲评表已生成');
   console.log(`  用例：${ordered.length} 条（来源 ${path.relative(ROOT, opts.source) || opts.source}）`);
   console.log(`  顺序：${opts.shuffle ? `已随机打乱，种子 ${seedLabel}` : '未打乱（不推荐用于盲评）'}`);
   console.log(`  回复：${replies.source}${missing.length ? `（${missing.length} 条无回复，将在表中留空）` : ''}`);

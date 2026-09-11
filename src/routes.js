@@ -1,9 +1,9 @@
 /**
- * 心屿 · 管理接口
+ * 守岸人 · 管理接口
  * - /api/config    本地模型配置（DeepSeek Key、模型、温度）读写与连通性自检
  * - /api/memory    长期记忆的查看 / 新增 / 编辑 / 删除 / 清空 / 开关
  * - /api/comeback  「回来」上下文（情感连续性；不调用模型）
- * - /api/demo      免 Key 演示模式开关（GET 查询 / POST 设置）
+ * - /api/sessions  会话转写（本机 data/sessions.json）的清空
  *
  * 安全：API Key 只落本地 data/config.json，对外一律脱敏；绝不写日志。
  */
@@ -11,9 +11,9 @@
 const express = require('express');
 const config = require('./config');
 const memory = require('./memory');
+const sessions = require('./sessions');
 const { testConnection } = require('./llm');
 const { getComeback } = require('./comeback');
-const { isDemoEnabled, setDemoEnabled } = require('./demo');
 
 // ── 配置 ────────────────────────────────────────────────────────
 const configRouter = express.Router();
@@ -117,14 +117,27 @@ comebackRouter.get('/', (req, res) => {
       lastSeenAt: null,
       hoursSince: null,
       timeOfDay: 'afternoon',
-      greeting: '我是心屿。你可以先坐一会儿，不用急着说什么。',
+      greeting: '我是守岸人。你可以先坐一会儿，不用急着说什么。',
       memoryHighlights: [],
       suggestions: ['今天状态还行', '想说点别的', '不知道从哪儿开始'],
       visitCount: 1
     };
   }
-  // demoAvailable 让前端知道可以引导没有 Key 的用户试演示模式
-  res.json({ ok: true, data: Object.assign({}, data, { demoAvailable: true }) });
+  res.json({ ok: true, data });
 });
 
-module.exports = { configRouter, memoryRouter, comebackRouter };
+// ── 会话转写：清空（本机 data/sessions.json）────────────────────
+// 对话原文属敏感数据，必须给用户一个「一键清空」的入口：只清前端 localStorage
+// 是不够的，服务端落盘的转写也要一起清掉。
+const sessionsRouter = express.Router();
+
+sessionsRouter.delete('/', (req, res) => {
+  try {
+    sessions.clearAllSessions();
+    res.json({ ok: true, data: { cleared: true } });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: '清空会话记录失败' });
+  }
+});
+
+module.exports = { configRouter, memoryRouter, comebackRouter, sessionsRouter };

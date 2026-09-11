@@ -1,5 +1,5 @@
 /**
- * 心屿 · 长期记忆（本地、可控、可清除）
+ * 守岸人 · 长期记忆（本地、可控、可清除）
  *
  * 设计原则：
  * - 只存在本机 data/memory.json（已 gitignore），不上传、不入库；
@@ -25,6 +25,8 @@ const MAX_TEXT_LEN = 60;
 
 // 分类：只保留对陪伴有用的类型
 const CATEGORIES = ['profile', 'stressor', 'preference', 'relationship', 'goal', 'state', 'other'];
+// 条目状态：active 在用 / superseded 被取代 / expired 已过期 / dormant 休眠
+const ITEM_STATUSES = ['active', 'superseded', 'expired', 'dormant'];
 const CATEGORY_LABELS = {
   profile: '基本情况',
   stressor: '压力来源',
@@ -60,7 +62,8 @@ function loadStore() {
       enabled: parsed.enabled !== false,
       updatedAt: Number(parsed.updatedAt) || now(),
       items,
-      tombstones: Array.isArray(parsed.tombstones) ? parsed.tombstones.map(String).slice(-200) : []
+      // tombstones 是「用户显式遗忘」，永久生效：不做截断，避免旧记录被挤掉后遗忘失效
+      tombstones: Array.isArray(parsed.tombstones) ? parsed.tombstones.map(String).filter(Boolean) : []
     };
   } catch (e) {
     return emptyStore();
@@ -82,12 +85,85 @@ function normalizeItem(it) {
     hits: Number(it.hits) || 0,
     importance: typeof it.importance === 'number' ? Math.max(0, Math.min(1, it.importance)) : 0.5,
     sensitivity: it.sensitivity === 'high' ? 'high' : 'normal',
-    status: it.status === 'superseded' ? 'superseded' : 'active',
-    supersededBy: it.supersededBy || null,
+    status: ITEM_STATUSES.includes(it.status) ? it.status : 'active',
+    supersededBy: it.supersededBy ? String(it.supersededBy) : null,
+    supersedes: Array.isArray(it.supersedes) ? it.supersedes.map(String).filter(Boolean) : [],
     validFrom: Number(it.validFrom) || Number(it.createdAt) || now(),
     createdAt: Number(it.createdAt) || now(),
     lastUsedAt: Number(it.lastUsedAt) || 0
   };
+}
+
+// ── tombstones 合并（去重、不截断）─────────────────────────────────
+function mergeTombstones(existing, texts) {
+  const out = Array.isArray(existing) ? existing.map(String).filter(Boolean) : [];
+  const seen = new Set(out);
+  const list = Array.isArray(texts) ? texts : [texts];
+  for (const t of list) {
+    const s = String(t == null ? '' : t);
+    if (s && !seen.has(s)) { seen.add(s); out.push(s); }
+  }
+  return out;
+}
+
+// ── 淘汰策略（按优先级，稳定、可重复）──────────────────────────────
+// 越靠前越该丢：0=已失效(superseded/expired) 1=休眠(dormant) 2=正常
+function dropRank(it) {
+  if (!it) return 2;
+  if (it.status === 'superseded' || it.status === 'expired') return 0;
+  if (it.status === 'dormant') return 1;
+  return 2;
+}
+
+function numOr(v, dflt) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : dflt;
+}
+
+// 淘汰比较器：状态 > 久未命中(lastUsedAt 最早，0/缺失=从未用过) > importance 最低 > createdAt 最早
+// 末尾用 id 兜底，保证同样输入永远得到同样输出。
+function compareDroppable(a, b) {
+  const ra = dropRank(a);
+  const rb = dropRank(b);
+  if (ra !== rb) return ra - rb;
+  const la = numOr(a && a.lastUsedAt, 0);
+  const lb = numOr(b && b.lastUsedAt, 0);
+  if (la !== lb) return la - lb;
+  const ia = numOr(a && a.importance, 0.5);
+  const ib = numOr(b && b.importance, 0.5);
+  if (ia !== ib) return ia - ib;
+  const ca = numOr(a && a.createdAt, 0);
+  const cb = numOr(b && b.createdAt, 0);
+  if (ca !== cb) return ca - cb;
+  return String((a && a.id) || '').localeCompare(String((b && b.id) || ''));
+}
+
+/**
+ * 按优先级淘汰超出上限的记忆，返回新的 items 数组（不修改入参）。
+ * - pinned === true 的条目任何情况下都豁免；
+ * - 其余按 compareDroppable 从最该丢的开始丢弃；
+ * - 同样输入产生同样输出（稳定，无随机）。
+ */
+function pruneItems(items, max) {
+  const list = Array.isArray(items) ? items : [];
+  const limit = Number.isFinite(Number(max)) ? Math.max(0, Math.floor(Number(max))) : MAX_ITEMS;
+  if (list.length <= limit) return list.slice();
+  const pinned = list.filter(it => it && it.pinned === true);
+  const rest = list.filter(it => !(it && it.pinned === true));
+  const room = Math.max(0, limit - pinned.length);
+  const dropCount = Math.max(0, rest.length - room);
+  const ordered = rest.slice().sort(compareDroppable);
+  const doomed = new Set(ordered.slice(0, dropCount));
+  return list.filter(it => !doomed.has(it));
+}
+
+// 把「旧条目被新条目取代」双向串起来：旧 → supersededBy=新 id；新 → supersedes 数组含旧 id
+function linkSupersede(oldItem, newItem) {
+  if (!oldItem || !newItem) return;
+  oldItem.status = 'superseded';
+  oldItem.supersededBy = newItem.id;
+  if (!Array.isArray(newItem.supersedes)) newItem.supersedes = [];
+  if (oldItem.id && !newItem.supersedes.includes(oldItem.id)) newItem.supersedes.push(oldItem.id);
 }
 
 function saveStore(store) {
@@ -97,8 +173,8 @@ function saveStore(store) {
       version: MEMORY_VERSION,
       enabled: store.enabled !== false,
       updatedAt: now(),
-      items: (store.items || []).slice(-MAX_ITEMS),
-      tombstones: (store.tombstones || []).slice(-200)
+      items: pruneItems(store.items || [], MAX_ITEMS),
+      tombstones: mergeTombstones(store.tombstones, [])
     };
     fs.writeFileSync(MEMORY_FILE, JSON.stringify(payload, null, 2), 'utf8');
     return true;
@@ -178,7 +254,6 @@ function addMemory({ text, category, source, confidence, pinned }) {
   const store = loadStore();
   const key = normalizeText(clean);
   if ((store.tombstones || []).some(t => t === key)) return { ok: false, error: '该内容已被用户遗忘' };
-  // 语义相近但结论相反（如「喜欢安静」→「不喜欢安静」）：旧条目置为失效，保留可回溯
   const cat = CATEGORIES.includes(category) ? category : 'other';
   let near = null;
   let nearScore = 0;
@@ -187,17 +262,15 @@ function addMemory({ text, category, source, confidence, pinned }) {
     const sc = similarity(it.text, clean);
     if (sc >= 0.45 && sc < 0.72 && it.category === cat && sc > nearScore) { near = it; nearScore = sc; }
   }
-  if (near && hasNegationFlip(near.text, clean)) {
-    near.status = 'superseded';
-    near.supersededBy = 'new';
-    store.items = store.items.map(it => (it.id === near.id ? near : it));
-  }
+  // 语义相近但结论相反（如「喜欢安静」→「不喜欢安静」）：旧条目置为失效，保留可回溯
+  const flip = near ? hasNegationFlip(near.text, clean) : false;
   const similar = findSimilar(store, clean);
   if (similar) {
     if (clean.length > similar.text.length) similar.text = clean;
     similar.hits = (similar.hits || 0) + 1;
     if (source === 'manual') { similar.source = 'manual'; similar.confidence = 1; }
     if (pinned) similar.pinned = true;
+    if (flip) linkSupersede(near, similar); // 合并时新结论落在 similar 上，指向它的真实 id
     store.items = store.items.map(it => (it.id === similar.id ? similar : it));
     saveStore(store);
     return { ok: true, item: similar, merged: true };
@@ -213,6 +286,11 @@ function addMemory({ text, category, source, confidence, pinned }) {
     createdAt: now(),
     lastUsedAt: 0
   });
+  // 新条目此刻已有真实 id，再回填旧条目的 supersededBy（不再用占位字符串）
+  if (flip) {
+    linkSupersede(near, item);
+    store.items = store.items.map(it => (it.id === near.id ? near : it));
+  }
   store.items.push(item);
   saveStore(store);
   return { ok: true, item, merged: false };
@@ -236,16 +314,14 @@ function removeMemory(id) {
   const target = store.items.find(it => it.id === id);
   if (!target) return { ok: false, error: '未找到该记忆' };
   store.items = store.items.filter(it => it.id !== id);
-  store.tombstones = (store.tombstones || []).concat(normalizeText(target.text)).slice(-200);
+  store.tombstones = mergeTombstones(store.tombstones, [normalizeText(target.text)]);
   saveStore(store);
   return { ok: true, removed: target.text };
 }
 
 function clearMemories() {
   const store = loadStore();
-  store.tombstones = (store.tombstones || [])
-    .concat(store.items.map(it => normalizeText(it.text)))
-    .slice(-200);
+  store.tombstones = mergeTombstones(store.tombstones, store.items.map(it => normalizeText(it.text)));
   store.items = [];
   saveStore(store);
   return { ok: true };
@@ -352,7 +428,7 @@ function handleForget(text) {
     return { ok: true, removed: 1, text: best.text };
   }
   // 没匹配到具体条目也要记住「不要再提这件事」
-  store.tombstones = (store.tombstones || []).concat(normalizeText(what)).slice(-200);
+  store.tombstones = mergeTombstones(store.tombstones, [normalizeText(what)]);
   saveStore(store);
   return { ok: true, removed: 0, ignored: what };
 }
@@ -429,10 +505,12 @@ async function extractFromTurn(opts) {
 
 module.exports = {
   MEMORY_FILE,
+  MAX_ITEMS,
   CATEGORIES,
   CATEGORY_LABELS,
   loadStore,
   saveStore,
+  pruneItems,
   listMemories,
   getStatus,
   addMemory,

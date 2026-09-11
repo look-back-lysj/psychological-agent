@@ -1,8 +1,8 @@
-// 心屿 · Tauri 桌面外壳
+// 守岸人 · Tauri 桌面外壳
 //
 // 启动流程：
 //   1) 挑一个空闲端口；
-//   2) 拉起 Node 后端 sidecar（打包后的 心屿.exe，自带 public/ 与依赖）；
+//   2) 拉起 Node 后端 sidecar（打包后的 守岸人.exe，自带 public/ 与依赖）；
 //   3) 窗口先显示内置闪屏，轮询后端 /api/health 就绪；
 //   4) 就绪后把窗口切到本地服务地址（真正的应用界面）；
 //   5) 应用退出时结束 sidecar，避免残留进程。
@@ -18,12 +18,33 @@ use tauri_plugin_shell::ShellExt;
 /// 后端 sidecar 句柄：应用退出时负责结束进程
 struct Backend(Mutex<Option<CommandChild>>);
 
-/// 让系统分配一个空闲端口
+/// 挑选后端监听的端口：优先使用固定端口，保证每次启动的页面 origin 一致。
+///
+/// 为什么要固定端口：前端把对话记录存在浏览器 localStorage 里，而 localStorage
+/// 是按 origin（协议 + 主机 + 端口）隔离的。如果端口每次都随机，等于每次打开的都是
+/// 一个全新的「网站」，旧的对话记录会被判给上一个 origin 而读不到，用户就会觉得
+/// 应用「每次都像第一次见我」。所以这里从 34117 起依次尝试固定端口，全部被占用时
+/// 才回退到系统随机分配（仅在极端情况下才会发生）。
 fn pick_port() -> u16 {
+    const BASE_PORT: u16 = 34117;
+    const MAX_TRIES: u16 = 20;
+
+    for offset in 0..MAX_TRIES {
+        let port = BASE_PORT + offset;
+        let addr = format!("127.0.0.1:{}", port);
+        // 能绑上说明该端口空闲；绑上后立即 drop 释放，
+        // 端口随后交给后端 sidecar 去真正监听。
+        if let Ok(listener) = TcpListener::bind(addr.as_str()) {
+            drop(listener);
+            return port;
+        }
+    }
+
+    // 兜底：固定端口全被占用时，让系统随机分配一个空闲端口。
     TcpListener::bind("127.0.0.1:0")
         .and_then(|l| l.local_addr())
         .map(|a| a.port())
-        .unwrap_or(34117)
+        .unwrap_or(BASE_PORT)
 }
 
 /// 轮询等待后端就绪（TCP 能连上即说明 Express 已在监听）
@@ -92,7 +113,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("心屿启动失败");
+        .expect("守岸人启动失败");
 
     app.run(|app_handle, event| {
         if let RunEvent::Exit = event {

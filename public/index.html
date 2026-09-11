@@ -116,7 +116,7 @@
           <p id="chat-subtitle">非诊疗情绪陪伴 · 记录只保存在本机浏览器</p>
         </div>
         <div class="topbar__actions">
-          <button class="pill pill--warn" id="model-warn" type="button" hidden title="当前为演示模式：回复由本地脚本生成。填入 API Key 即可与真实模型对话">填入 API Key</button>
+          <button class="pill pill--warn" id="model-warn" type="button" hidden title="尚未配置 API Key：填入后即可开始与模型对话">填入 API Key</button>
           <button class="icon-btn is-compact" id="debug-toggle" type="button" aria-pressed="false" aria-label="调试面板开关" title="调试面板（显示策略路由）">
             <svg class="icon"><use href="#i-debug" /></svg>
           </button>
@@ -136,7 +136,7 @@
             <section class="hero" id="hero">
               <div class="hero__mark" aria-hidden="true">
                 <span class="hero__ring"></span>
-                <span class="hero__core">屿</span>
+                <span class="hero__core">守</span>
               </div>
               <h1 class="hero__title" id="hero-title">你好，我在这里</h1>
               <p class="hero__sub" id="hero-sub">不用急着说什么。想聊的时候，我在。</p>
@@ -151,11 +151,6 @@
               <p class="starters__label" id="starters-label">可以这样开始</p>
               <div class="suggestions" id="suggestions"></div>
             </section>
-
-            <button class="demo-entry" id="demo-entry" type="button" hidden>
-              <svg class="icon" aria-hidden="true"><use href="#i-spark" /></svg>
-              <span id="demo-entry-text">没有 API Key？先用演示模式感受一下</span>
-            </button>
 
             <p class="welcome__notice">我不是心理咨询师，也不能在危机时提供专业支持。如有紧急情况，请立即联系身边可信任的人、学校心理中心或当地紧急服务。</p>
           </div>
@@ -186,7 +181,7 @@
     <div class="wizard__card" role="dialog" aria-modal="true" aria-labelledby="wizard-title">
       <header class="wizard__head">
         <div class="wizard__brand">
-          <span class="wizard__mark" aria-hidden="true">屿</span>
+          <span class="wizard__mark" aria-hidden="true">守</span>
           <span class="wizard__title" id="wizard-title">开始使用守岸人</span>
         </div>
         <div class="wizard__dots" id="wizard-dots" aria-hidden="true">
@@ -204,7 +199,9 @@
             <ul>
               <li>我不是心理咨询师，<strong>不能替代专业帮助</strong>，也不做任何诊断。</li>
               <li>如果你正处于危机中，请优先联系身边可信任的人、学校心理中心或当地紧急服务。</li>
-              <li>你发送的消息会转发给你配置的第三方模型服务用于生成回复；本机只保存模型配置本身。</li>
+              <li>长期记忆只保存在这台电脑本地，不会上传到任何服务器。</li>
+              <li>但每一次对话，都还是会用你自己填写的 DeepSeek API Key 发给 DeepSeek，才能生成回复——请不要说任何不想让第三方看到的内容。</li>
+              <li>你可以随时在「记忆」里逐条查看、删除，或一键清空。</li>
             </ul>
           </div>
           <p class="wizard__p wizard__p--soft">接下来只需要三步：注册账号、创建 API Key、粘贴进来测试一次。</p>

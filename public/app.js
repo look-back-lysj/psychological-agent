@@ -1,5 +1,5 @@
 /*!
- * 心屿 · 大学生情绪陪伴助手 —— 前端交互逻辑（public/app.js）
+ * 守岸人 · 大学生情绪陪伴助手 —— 前端交互逻辑（public/app.js）
  *
  * 纯原生 JavaScript（ES2020+），无任何第三方依赖 / CDN 引入。
  * 职责：
@@ -108,18 +108,12 @@
   const USED_MEMORY_SHOW = 2;  // 「用到了」最多展示 2 条，其余折叠为「等 N 条」
   const SR_LIVE_MAX = 200;     // 读屏播报截断长度
 
-  // 情感连续性（GET /api/comeback）与免 Key 演示模式（GET/POST /api/demo）
+  // 情感连续性（GET /api/comeback）
   const COMEBACK_TIMEOUT_MS = 3000;
   const COMEBACK_CACHE_MS = 5000;
-  const DEMO_TIMEOUT_MS = 3000;
   const DEFAULT_HERO_TITLE = '你好，我在这里';
   const DEFAULT_HERO_SUB = '不用急着说什么。想聊的时候，我在。';
   const DEFAULT_STARTERS_LABEL = '可以这样开始';
-  const DEMO_ENTRY_OFF_TEXT = '没有 API Key？先用演示模式感受一下';
-  const DEMO_ENTRY_ON_TEXT = '演示模式已开启（不会发送到模型）';
-  const DEMO_ON_TOAST = '已进入演示模式';
-  const DEMO_OFF_TOAST = '已退出演示模式';
-  const DEMO_FAIL_TOAST = '演示模式暂时不可用，稍后再试';
 
   // 接口不可用 / suggestions 为空时回落的 4 条静态建议（保持 button.suggestion + data-prompt 契约）
   const STATIC_SUGGESTIONS = [
@@ -177,8 +171,6 @@
     recall: $('recall'),
     recallList: $('recall-list'),
     startersLabel: $('starters-label'),
-    demoEntry: $('demo-entry'),
-    demoEntryText: $('demo-entry-text'),
     scrollBottom: $('scroll-bottom'),
     form: $('chat-form'),
     input: $('message'),
@@ -291,18 +283,14 @@
   let scrollBtnVisible = false;// 「回到最新」当前是否可见（避免滚动时反复改 DOM）
   let lastRippleAt = 0;        // 发送键最近一次涟漪反馈的时间戳
 
-  // 情感连续性 / 演示模式
+  // 情感连续性（comeback）
   let comebackCache = null;    // 最近一次成功的 /api/comeback 数据
   let comebackAt = 0;          // 上面数据的获取时间，用于短间隔缓存
   let comebackInFlight = null; // 进行中的 comeback 请求（避免并发重复）
-  let demoCapable = false;     // /api/demo 是否可用（接口存在或 comeback 声明可用）
-  let demoEnabled = false;     // 演示模式当前是否开启
-  let demoBusy = false;        // 演示模式切换 / 自动关闭进行中
   let storageWarned = false;   // 本机写入失败是否已提示（同一次会话只提示一次）
   let drawerReturnFocus = null;    // 关闭抽屉后归还焦点的元素
   let sidebarReturnFocus = null;   // 关闭侧边栏后归还焦点的元素
   let shortcutsReturnFocus = null; // 关闭快捷键帮助后归还焦点的元素
-  let demoApplied = null;      // 上次同步「用到了」显隐时的演示模式状态
 
   /* ============================================================
    * 四、通用工具
@@ -1211,7 +1199,7 @@
       } else {
         content.innerHTML = DOTS_HTML;
       }
-      bubble.setAttribute('aria-label', msg.waitingText || '心屿正在输入');
+      bubble.setAttribute('aria-label', msg.waitingText || '守岸人正在输入');
       bubble.appendChild(content);
       box.appendChild(bubble);
       return;
@@ -1294,8 +1282,8 @@
   function renderUsed(usedEl, msg) {
     if (!usedEl) return;
     const list = (msg && Array.isArray(msg.memoriesUsed)) ? msg.memoriesUsed : [];
-    // 演示模式的回复没有真实记忆；流式过程中先不出现，等 done 后一次成型
-    if (!list.length || demoEnabled || (msg && msg.streaming)) {
+    // 流式过程中先不出现，等 done 后一次成型
+    if (!list.length || (msg && msg.streaming)) {
       usedEl.textContent = '';
       usedEl.dataset.sig = '';
       setHidden(usedEl, true);
@@ -1326,25 +1314,11 @@
     setHidden(usedEl, false);
   }
 
-  // 演示模式切换后同步「用到了」的显隐（不重建整段消息，避免滚动跳动）
-  function refreshUsedRows() {
-    if (!el.messages) return;
-    const session = getSession(activeId);
-    if (!session) return;
-    const nodes = el.messages.querySelectorAll('.msg--assistant');
-    for (let i = 0; i < nodes.length; i += 1) {
-      const index = Number(nodes[i].dataset.index);
-      if (!Number.isInteger(index)) continue;
-      const msg = session.messages[index];
-      if (msg) renderUsed(nodes[i].querySelector('.msg__used'), msg);
-    }
-  }
-
   function buildAssistantMessage(msg, index) {
     const article = makeEl('article', 'msg msg--assistant');
     article.dataset.index = String(index);
 
-    const avatar = makeEl('div', 'msg__avatar', '屿');
+    const avatar = makeEl('div', 'msg__avatar', '守');
     avatar.setAttribute('aria-hidden', 'true');
 
     const body = makeEl('div', 'msg__body');
@@ -2289,12 +2263,11 @@
    * ============================================================ */
 
   function setHealth(state, statusText, modelText) {
-    // 演示模式开启时，状态胶囊固定显示「演示模式」（复用 ok 状态，不改样式假设）
     if (el.statusPill) {
-      el.statusPill.dataset.state = demoEnabled ? 'ok' : state;
-      el.statusPill.textContent = demoEnabled ? '演示模式' : statusText;
+      el.statusPill.dataset.state = state;
+      el.statusPill.textContent = statusText;
     }
-    if (el.modelDot) el.modelDot.dataset.state = demoEnabled ? 'ok' : state;
+    if (el.modelDot) el.modelDot.dataset.state = state;
     if (el.modelPill) el.modelPill.textContent = modelText;
   }
 
@@ -2312,19 +2285,16 @@
       if (configured) {
         setHealth('ok', '已连接', '模型：' + (model || '已配置'));
         setHidden(el.modelWarn, true);
-        maybeAutoDisableDemo(); // 用户后来补了 Key：自动退出演示模式
       } else {
         setHealth('error', '模型未配置', '模型：未配置');
         setHidden(el.modelWarn, false);
         // 没有 Key 时直接引导用户完成配置（这是唯一的使用路径）
         if (!isSetupDismissed() && !isWizardOpen() && !activeDrawer) openWizard(1);
       }
-      syncDemoUI();
       return data;
     } catch (e) {
       healthConfigured = null;
       setHealth('error', '连接失败', '模型：无法连接');
-      syncDemoUI();
       return null;
     }
   }
@@ -2334,9 +2304,9 @@
   }
 
   /* ============================================================
-   * 十五·补、情感连续性（comeback）与免 Key 演示模式
+   * 十五·补、情感连续性（comeback）
    * ------------------------------------------------------------
-   * 这两块都是「锦上添花」：接口缺失 / 超时 / 返回异常时一律静默降级到
+   * 它只是「锦上添花」：接口缺失 / 超时 / 返回异常时一律静默降级到
    * 静态欢迎文案，绝不抛错、不白屏，也不影响聊天主流程。
    * ============================================================ */
 
@@ -2492,13 +2462,9 @@
       else if (data.timeOfDay === 'evening') el.startersLabel.textContent = '晚上也可以这样开始';
       else el.startersLabel.textContent = DEFAULT_STARTERS_LABEL;
     }
-    if (data.demoAvailable === true) {
-      demoCapable = true;
-      syncDemoUI();
-    }
   }
 
-  // force=true 时忽略缓存（演示模式切换后需要新问候）
+  // force=true 时忽略缓存
   async function loadComeback(force) {
     if (!force && comebackCache && comebackAt && (now() - comebackAt) < COMEBACK_CACHE_MS) {
       applyComeback(comebackCache); // 短间隔内复用缓存，避免频繁请求
@@ -2519,88 +2485,6 @@
     } finally {
       comebackInFlight = null;
     }
-  }
-
-  // ── 演示模式 ────────────────────────────────────────────────
-
-  function applyDemoPill() {
-    if (el.statusPill && demoEnabled) {
-      el.statusPill.dataset.state = 'ok';
-      el.statusPill.textContent = '演示模式';
-    }
-  }
-
-  function syncDemoUI() {
-    // 演示模式已移除：入口永远隐藏，「用到了」提示按真实记忆渲染
-    if (el.demoEntry) setHidden(el.demoEntry, true);
-    if (demoApplied !== false) {
-      demoApplied = false;
-      try { refreshUsedRows(); } catch (e) { /* 忽略 */ }
-    }
-    return false;
-  }
-
-  // 已移除「无 API 模式」：不再提供本地脚本回复。
-  // 没有配置 Key 时，直接引导用户完成配置（见 checkHealth 里的 openWizard）。
-  async function loadDemo() {
-    demoCapable = false;
-    demoEnabled = false;
-    syncDemoUI();
-    return null;
-  }
-
-  async function toggleDemoFromEntry() {
-    if (demoBusy || !el.demoEntry) return;
-    demoBusy = true;
-    el.demoEntry.disabled = true;
-    const next = !demoEnabled;
-    try {
-      const data = await fetchDataWithTimeout('/api/demo', { method: 'POST', body: { enabled: next } }, DEMO_TIMEOUT_MS);
-      if (!data || typeof data !== 'object') { toast(DEMO_FAIL_TOAST, 'error'); return; }
-      demoCapable = true;
-      demoEnabled = data.enabled === true;
-      if (demoEnabled) {
-        if (isWizardOpen()) closeWizard(true); // 关闭向导，让用户直接开始
-        toast(DEMO_ON_TOAST, 'success');
-      } else {
-        toast(DEMO_OFF_TOAST);
-      }
-      syncDemoUI();
-      await loadComeback(true);   // 重新拉「回来」问候与建议
-      if (!demoEnabled) checkHealth(); // 退出后刷新连接状态
-      focusInput();
-    } catch (e) {
-      toast(DEMO_FAIL_TOAST, 'error');
-    } finally {
-      demoBusy = false;
-      if (el.demoEntry) el.demoEntry.disabled = false;
-    }
-  }
-
-  // 关闭演示模式后，用已知的 health 状态恢复状态胶囊（避免残留「演示模式」）
-  function reapplyHealthStatus() {
-    if (healthConfigured === true) {
-      setHealth('ok', '已连接', (el.modelPill && el.modelPill.textContent) || '模型：已配置');
-    } else if (healthConfigured === false) {
-      setHealth('error', '模型未配置', '模型：未配置');
-      setHidden(el.modelWarn, false);
-      if (!isSetupDismissed() && !isWizardOpen() && !activeDrawer) openWizard(1);
-    } else {
-      checkHealth(); // 状态未知时重新探测一次
-    }
-  }
-
-  // 用户后来填了 Key 并保存成功：自动关闭演示模式（失败也以本地状态为准，静默处理）
-  async function maybeAutoDisableDemo() {
-    if (!demoEnabled || demoBusy) return;
-    demoBusy = true;
-    try {
-      await fetchDataWithTimeout('/api/demo', { method: 'POST', body: { enabled: false } }, DEMO_TIMEOUT_MS);
-    } catch (e) { /* 忽略：本地状态照样关闭 */ }
-    demoEnabled = false;
-    demoBusy = false;
-    syncDemoUI();
-    reapplyHealthStatus();
   }
 
   /* ============================================================
@@ -2637,9 +2521,6 @@
 
     // 新对话
     if (el.newChat) el.newChat.addEventListener('click', startNewChat);
-
-    // 免 Key 演示模式入口
-    if (el.demoEntry) el.demoEntry.addEventListener('click', toggleDemoFromEntry);
 
     // 主题
     if (el.themeToggle) el.themeToggle.addEventListener('click', toggleTheme);
@@ -3077,7 +2958,6 @@
         healthConfigured = true;
         setHealth('ok', '已连接', '模型：' + (result.model || model));
         setHidden(el.modelWarn, true);
-        maybeAutoDisableDemo(); // 补上 Key 后自动退出演示模式
         if (el.wizardKey) el.wizardKey.value = '';
         window.setTimeout(function () {
           closeWizard(false);
@@ -3150,7 +3030,6 @@
       applyConfigToForm(configCache || {});
       if (!silent) toastError(e, '读取设置失败，先显示上一次的配置');
     }
-    syncDemoUI(); // configured 状态可能变化，同步演示模式入口
   }
 
   function collectSettingsPatch() {
@@ -3191,7 +3070,6 @@
       setResult(el.settingsResult, 'ok', '设置已保存。');
       if (!silent) toast(CONFIG_SAVED_TOAST, 'success');
       await refreshHealth();
-      maybeAutoDisableDemo(); // 兜底：即使健康检查失败也自动退出演示模式
       return true;
     } catch (e) {
       setResult(el.settingsResult, 'error', (e && e.userMessage) || '保存失败，请稍后再试。');
@@ -3247,7 +3125,6 @@
       setHealth('error', '模型未配置', '模型：未配置');
       setHidden(el.modelWarn, false);
       setResult(el.settingsResult, '', '');
-      syncDemoUI(); // 清除 Key 后演示模式入口重新露出
       toast('已清除 API Key', 'success');
     } catch (e) {
       toastError(e, '清除失败，请稍后再试');
@@ -3363,7 +3240,7 @@
       el.memoryUpdated.textContent = ts ? ('最近更新 ' + formatTime(ts)) : '';
     }
     if (el.memoryEmpty) {
-      el.memoryEmpty.textContent = '还没有记住任何内容。聊到对陪伴有用的稳定事实时，心屿会试着记下来，你也可以在上面手动添加。';
+      el.memoryEmpty.textContent = '还没有记住任何内容。聊到对陪伴有用的稳定事实时，守岸人会试着记下来，你也可以在上面手动添加。';
       setHidden(el.memoryEmpty, list.length > 0);
     }
     if (el.memoryFootNote) {
@@ -3661,7 +3538,6 @@
     stickBottom = true;
     renderAll();
     renderSuggestions(STATIC_SUGGESTIONS); // 先给静态兜底，comeback 回来后替换
-    syncDemoUI();
     autosize();
     syncComposer();
     updateScrollButton();
@@ -3669,7 +3545,6 @@
     loadConfig(true);
     checkHealth();
     loadComeback(); // 情感连续性：只拉一次，失败静默保持静态欢迎文案
-    loadDemo();     // 免 Key 演示模式：接口可用且未配置 Key 时露出入口
   }
 
   if (document.readyState === 'loading') {

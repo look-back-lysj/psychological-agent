@@ -1,12 +1,12 @@
 /**
- * 心屿 · 「回来」体验（情感连续性）
+ * 守岸人 · 「回来」体验（情感连续性）
  *
  * 目标：用户每次打开页面，都能感到「它记得我」。
  * 做法：完全不调用大模型 —— 用本地状态（上次打开时间 / 来访次数）
  *       + 长期记忆（listMemories）+ 时段，模板拼装出问候语与动态建议。
  *
- * 状态文件：data/state.json（与 demo.js 共用）
- *   { lastSeenAt, visitCount, firstSeenAt, demoEnabled? }
+ * 状态文件：data/state.json
+ *   { lastSeenAt, visitCount, firstSeenAt }
  * 读写一律 try/catch 静默降级：任何失败都不能让服务起不来。
  */
 
@@ -24,11 +24,10 @@ const LONG_GAP_HOURS = 72;    // 超过 72 小时视为「有一阵子没见」
 const HOUR_MS = 3600000;
 const DAY_MS = 86400000;
 
-// ── 本地状态：读 / 写（与 demo.js 共用，失败一律静默）───────────
+// ── 本地状态：读 / 写（失败一律静默）────────────────────────────
 
 function emptyState() {
-  // demoEnabled 默认为 true：没有 Key 时打开就能用（用户显式关闭后才为 false）
-  return { lastSeenAt: null, visitCount: 0, firstSeenAt: null, demoEnabled: true };
+  return { lastSeenAt: null, visitCount: 0, firstSeenAt: null };
 }
 
 /** state.json 的绝对路径；dataDir() 不可用时返回 null。 */
@@ -50,7 +49,6 @@ function normalizeState(raw) {
   out.lastSeenAt = Number.isFinite(lastSeen) && lastSeen > 0 ? lastSeen : null;
   out.firstSeenAt = Number.isFinite(firstSeen) && firstSeen > 0 ? firstSeen : null;
   out.visitCount = Number.isFinite(visits) && visits > 0 ? Math.floor(visits) : 0;
-  out.demoEnabled = raw.demoEnabled !== false; // 只有显式 false 才算关闭
   return out;
 }
 
@@ -304,7 +302,7 @@ function getComeback() {
 
 module.exports = {
   getComeback,
-  // 供 demo.js 共用同一份 state.json（各自读改写、失败静默）
+  // 导出状态读写工具：供外部按需读写同一份 state.json（各自读改写、失败静默）
   readState,
   writeState,
   stateFilePath

@@ -5,9 +5,12 @@ const STREAM_IDLE_TIMEOUT_MS = 15000;
 const STREAM_TOTAL_TIMEOUT_MS = 180000;
 // 连通性自检的超时（不重试，要快）
 const TEST_TIMEOUT_MS = 20000;
-// 429/500/503 最多重试 2 次；超时（AbortError）最多补 1 次
+// 对齐官方 OpenAI / Anthropic SDK 默认值：408 / 409 / 429 及所有 ≥500 可重试，最多 2 次；超时（AbortError）最多补 1 次
 const MAX_RETRIES = 2;
-const RETRYABLE_STATUS = [429, 500, 503];
+// 官方 SDK 的 MAX_RETRY_DELAY = 8.0：指数退避封顶 8 秒
+const MAX_RETRY_DELAY_MS = 8000;
+// 官方 SDK 的 MAX_RETRY_AFTER_DELAY = 120（秒）：Retry-After 超过 120s 就放弃重试
+const MAX_RETRY_AFTER_DELAY_MS = 120000;
 
 // 统一错误前缀 + 对用户友好的中文说明（DeepSeek 错误码页，2026-09-10 核实）
 const STATUS_ERRORS = {
@@ -102,17 +105,23 @@ async function callLLM(systemPrompt, messages, { retries = MAX_RETRIES } = {}) {
       });
       if (!res.ok) {
         const t = await res.text().catch(() => '');
-        throw makeHttpError(res.status, t);
+        const err = makeHttpError(res.status, t);
+        const retryAfterMs = parseRetryAfterMs(res.headers);
+        if (retryAfterMs != null) err.retryAfterMs = retryAfterMs;
+        throw err;
       }
       const data = await res.json();
       return { content: data?.choices?.[0]?.message?.content || '', usage: data?.usage || null };
     } catch (e) {
       lastError = normalizeError(e);
-      // 只对 429/500/503 指数退避重试；超时最多补 1 次；400/401/402/422 等立即失败
+      // 对齐官方 SDK：408/409/429 与所有 ≥500 指数退避重试；超时最多补 1 次；400/401/402/422 等立即失败
       const timedOut = isAbortError(e);
-      const allowed = RETRYABLE_STATUS.includes(lastError.status) ? maxRetries : (timedOut ? Math.min(maxRetries, 1) : 0);
+      const allowed = isRetryableStatus(lastError.status) ? maxRetries : (timedOut ? Math.min(maxRetries, 1) : 0);
       if (!allowed || attempt >= allowed) break;
-      await sleep(backoffDelay(attempt));
+      // 服务端给了 Retry-After 就按它等待；等待时长超过 120s 直接放弃重试
+      const retryAfterMs = lastError.retryAfterMs;
+      if (retryAfterMs != null && retryAfterMs > MAX_RETRY_AFTER_DELAY_MS) break;
+      await sleep(retryAfterMs != null ? retryAfterMs : backoffDelay(attempt));
     } finally {
       clearTimeout(timer);
     }
@@ -165,7 +174,10 @@ async function callLLMStream(systemPrompt, messages, { onDelta, signal, retries 
       });
       if (!res.ok) {
         const t = await res.text().catch(() => '');
-        throw makeHttpError(res.status, t);
+        const err = makeHttpError(res.status, t);
+        const retryAfterMs = parseRetryAfterMs(res.headers);
+        if (retryAfterMs != null) err.retryAfterMs = retryAfterMs;
+        throw err;
       }
 
       const reader = res.body.getReader();
@@ -230,9 +242,12 @@ async function callLLMStream(systemPrompt, messages, { onDelta, signal, retries 
       if ((signal && signal.aborted) || emitted) throw e;
       lastError = normalizeError(e);
       const timedOut = isAbortError(e);
-      const allowed = RETRYABLE_STATUS.includes(lastError.status) ? maxRetries : (timedOut ? Math.min(maxRetries, 1) : 0);
+      const allowed = isRetryableStatus(lastError.status) ? maxRetries : (timedOut ? Math.min(maxRetries, 1) : 0);
       if (!allowed || attempt >= allowed) break;
-      await sleep(backoffDelay(attempt));
+      // 服务端给了 Retry-After 就按它等待；等待时长超过 120s 直接放弃重试
+      const retryAfterMs = lastError.retryAfterMs;
+      if (retryAfterMs != null && retryAfterMs > MAX_RETRY_AFTER_DELAY_MS) break;
+      await sleep(retryAfterMs != null ? retryAfterMs : backoffDelay(attempt));
     } finally {
       clearTimers();
       if (signal) signal.removeEventListener('abort', onExternalAbort);
@@ -241,12 +256,53 @@ async function callLLMStream(systemPrompt, messages, { onDelta, signal, retries 
   throw lastError || new Error('call_llm_failed');
 }
 
-// 连通性自检：发一条极小的非流式请求，成功/失败都返回结果对象，不抛异常
+/**
+ * 零 token 探针：GET {baseUrl}/models（OpenAI 兼容接口，只校验鉴权，不产生计费 token）。
+ * 返回 { ok:true } 表示连通；{ ok:false, fallback:true } 表示该服务没有 /models，需回退 chat 探测。
+ */
+async function probeModels(cfg) {
+  const url = `${cfg.baseUrl}/models`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${cfg.apiKey}` },
+      signal: controller.signal
+    });
+    if (res.ok) return { ok: true }; // 2xx：鉴权通过，连通
+    // 401/403：Key 无效或没有权限，直接判定鉴权失败，不再花一次 chat 请求
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, code: 'model_auth', message: STATUS_ERRORS[401][1] };
+    }
+    // 404（部分兼容服务没有 /models 端点）与其它非 2xx：回退到 chat 探测
+    return { ok: false, fallback: true };
+  } catch (e) {
+    // 网络错误 / 超时：回退到 chat 探测
+    return { ok: false, fallback: true };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// 连通性自检：优先 GET /models 零 token 探针，必要时回退到一条极小的 chat 请求。
+// 成功/失败都返回 { ok, code?, message?, model?, latencyMs, sample? }，不抛异常。
 async function testConnection() {
   const cfg = getConfig();
   if (!cfg.apiKey) return { ok: false, code: 'no_key', message: '尚未填写 API Key' };
 
   const startedAt = Date.now();
+
+  // 先用 /models 探针（零 token 成本）
+  const probe = await probeModels(cfg);
+  if (probe.ok) {
+    return { ok: true, model: cfg.model, latencyMs: Date.now() - startedAt, sample: '' };
+  }
+  if (!probe.fallback) {
+    return { ok: false, code: probe.code, message: probe.message, latencyMs: Date.now() - startedAt };
+  }
+
+  // 回退：原来的极小 chat 请求（部分兼容服务没有 /models 端点，或 /models 网络不可达）
   const url = `${cfg.baseUrl}/chat/completions`;
   const payload = buildPayload(cfg, '你是一个连通性测试助手，请用一句话回应。', [{ role: 'user', text: '你好' }], false);
   payload.max_tokens = 8; // 极小请求，尽量少花额度
@@ -282,10 +338,38 @@ function clampRetries(retries) {
   return Math.min(Math.max(n, 0), MAX_RETRIES);
 }
 
-// 指数退避 1s→2s，叠加 ±20% 抖动，避免同时重试打爆服务
+// 对齐官方 SDK：408、409、429 以及所有 ≥500 都视为可重试
+function isRetryableStatus(status) {
+  const s = Number(status);
+  if (!Number.isFinite(s)) return false;
+  return s === 408 || s === 409 || s === 429 || s >= 500;
+}
+
+/**
+ * 解析服务端 Retry-After：优先 retry-after-ms（毫秒），其次 retry-after（秒 / HTTP 日期）。
+ * 返回毫秒数；拿不到或无法解析时返回 null，由指数退避兜底。
+ */
+function parseRetryAfterMs(headers) {
+  if (!headers || typeof headers.get !== 'function') return null;
+  const msRaw = headers.get('retry-after-ms');
+  if (msRaw != null && msRaw !== '') {
+    const ms = Number(msRaw);
+    if (Number.isFinite(ms) && ms >= 0) return Math.round(ms);
+  }
+  const secRaw = headers.get('retry-after');
+  if (secRaw != null && secRaw !== '') {
+    const sec = Number(secRaw);
+    if (Number.isFinite(sec) && sec >= 0) return Math.round(sec * 1000);
+    const at = Date.parse(secRaw); // 兼容 HTTP-date 形式
+    if (Number.isFinite(at)) return Math.max(0, at - Date.now());
+  }
+  return null;
+}
+
+// 指数退避 1s→2s→4s，叠加 ±20% 抖动，并整体封顶 8s，避免同时重试打爆服务
 function backoffDelay(attempt) {
-  const base = 1000 * Math.pow(2, attempt);
-  return Math.round(base * 0.8 + Math.random() * base * 0.4);
+  const base = Math.min(1000 * Math.pow(2, attempt), MAX_RETRY_DELAY_MS);
+  return Math.min(MAX_RETRY_DELAY_MS, Math.round(base * 0.8 + Math.random() * base * 0.4));
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

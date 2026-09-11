@@ -1,5 +1,5 @@
 /* =========================================================================
-   心屿 · 大学生情绪陪伴智能体 —— 产品级设计系统
+   守岸人 · 大学生情绪陪伴智能体 —— 产品级设计系统
    文件：public/style.css（本次仅重写此文件）
 
    气质：安静、温暖、可信赖、有呼吸感（非医疗冷感、非卡通幼稚）
@@ -3487,7 +3487,7 @@ dialog.modal.is-closing::backdrop {
      18.1  氛围层：多点极淡光晕 + 细噪点
      18.2  首屏英雄区：徽标 / 细环 / 入场编排
      18.3  记忆回顾区：玻璃卡片 + 左侧渐变细线 + 展示型胶囊
-     18.4  建议胶囊与演示模式入口
+     18.4  建议胶囊
      18.5  材质与光影：玻璃、四级阴影、圆角节奏
      18.6  排版精修：字号阶梯、字距、行高、数字
      18.7  交互三态与双层焦点环
@@ -3649,7 +3649,7 @@ body::after {
   animation: hero-ring-spin 26s linear infinite, hero-ring-breathe 7s var(--ease) infinite;
 }
 
-/* 内层：渐变圆角方块承载「屿」字，字距 + 内阴影 + 顶部高光 */
+/* 内层：渐变圆角方块承载「守」字，字距 + 内阴影 + 顶部高光 */
 .hero__core {
   position: relative;
   display: grid;
@@ -3851,7 +3851,7 @@ body::after {
   animation-delay: 600ms;
 }
 
-/* ── 18.4 建议胶囊与演示模式入口 ───────────────────────────────────────── */
+/* ── 18.4 建议胶囊 ─────────────────────────────────────────────────────── */
 
 .starters {
   display: flex;
@@ -3907,128 +3907,6 @@ body::after {
 /* 若 JS 写入 --i，则按「每条 +60ms」精确编排（放在最后以覆盖 nth-child） */
 .suggestions .suggestion {
   animation-delay: calc(360ms + var(--i, 0) * 60ms);
-}
-
-/* 演示模式入口：低调但有吸引力的提示条（虚线描边 + 呼吸 spark + 流动渐变） */
-.demo-entry {
-  position: relative;
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-2);
-  max-width: 100%;
-  padding: 10px var(--sp-5);
-  overflow: hidden;
-  isolation: isolate;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--r-full);
-  background-color: var(--brand-veil);
-  color: var(--text-soft);
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  line-height: 1.5;
-  letter-spacing: 0.01em;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease),
-    box-shadow var(--dur) var(--ease-out), transform var(--dur-fast) var(--ease);
-  animation: rise-soft 620ms var(--ease-out) 560ms backwards;
-}
-
-.demo-entry > .icon,
-.demo-entry > span {
-  position: relative;
-  z-index: 1;
-}
-
-/* spark 图标轻微呼吸 */
-.demo-entry .icon {
-  color: var(--brand);
-  font-size: 15px;
-  animation: demo-spark 3.8s var(--ease) infinite;
-}
-
-/* 底层流动光带：只做 transform 旋转，hover / 键盘聚焦时才开始跑 */
-.demo-entry::before {
-  content: "";
-  position: absolute;
-  inset: -140%;
-  z-index: 0;
-  background: conic-gradient(
-    from 0deg at 50% 50%,
-    transparent 0deg 190deg,
-    rgba(91, 141, 239, 0.3) 236deg,
-    rgba(79, 209, 197, 0.34) 268deg,
-    transparent 316deg
-  );
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 320ms var(--ease);
-  animation: demo-flow 5.5s linear infinite;
-  animation-play-state: paused;
-}
-
-/* 上层渐变细边（1px，遮罩成环），hover 时替换虚线描边 */
-.demo-entry::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  padding: 1px;
-  border-radius: inherit;
-  background: var(--grad-brand);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--dur) var(--ease);
-}
-
-.demo-entry:hover,
-.demo-entry:focus-visible {
-  border-color: transparent;
-  color: var(--text);
-  transform: translateY(-1px);
-  box-shadow: var(--sh-sm-hover);
-}
-
-.demo-entry:hover::before,
-.demo-entry:focus-visible::before {
-  opacity: 0.5;
-  animation-play-state: running;
-}
-
-.demo-entry:hover::after,
-.demo-entry:focus-visible::after {
-  opacity: 0.85;
-}
-
-.demo-entry:active {
-  transform: translateY(1px);
-}
-
-@keyframes demo-flow {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes demo-spark {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 0.85;
-  }
-  50% {
-    transform: scale(1.14);
-    opacity: 1;
-  }
 }
 
 /* 页脚免责声明：最后入场，保持克制 */
@@ -4125,14 +4003,14 @@ body {
 /* ── 18.7 交互三态与双层焦点环 ─────────────────────────────────────────── */
 
 /* 补齐（不覆盖已有更精细的样式）：统一过渡时长与曲线，hover 不会跳变 */
-:where(.btn, .icon-btn, .ghost-btn, .pill, .suggestion, .link-btn, .scroll-bottom, .msg__action, .demo-entry, .recall__chip, .titlebar__btn) {
+:where(.btn, .icon-btn, .ghost-btn, .pill, .suggestion, .link-btn, .scroll-bottom, .msg__action, .recall__chip, .titlebar__btn) {
   transition-property: transform, box-shadow, background-color, border-color, color, opacity;
   transition-duration: var(--dur);
   transition-timing-function: var(--ease);
 }
 
 /* 补齐 active 下沉 1px（已有规则的按钮保持原样） */
-:where(.link-btn, .pill, .demo-entry, .titlebar__btn):active {
+:where(.link-btn, .pill, .titlebar__btn):active {
   transform: translateY(1px);
 }
 
@@ -4148,7 +4026,6 @@ body {
 .pill:focus-visible,
 .suggestion:focus-visible,
 .link-btn:focus-visible,
-.demo-entry:focus-visible,
 .scroll-bottom:focus-visible,
 .titlebar__btn:focus-visible,
 .msg__action:focus-visible,
@@ -4346,9 +4223,6 @@ html[data-theme="dark"] ::selection {
   .recall__list > li,
   .starters__label,
   .suggestions .suggestion,
-  .demo-entry,
-  .demo-entry::before,
-  .demo-entry .icon,
   .welcome__notice {
     animation: none !important;
     transition: none !important;
@@ -4367,7 +4241,6 @@ html[data-theme="dark"] ::selection {
   .recall__chip,
   .starters__label,
   .suggestions .suggestion,
-  .demo-entry,
   .welcome__notice {
     opacity: 1 !important;
     transform: none !important;
@@ -4376,16 +4249,6 @@ html[data-theme="dark"] ::selection {
   .hero__ring {
     opacity: 0.55;
     scale: 1 !important;
-  }
-
-  /* 装饰性流动光带不再启动，改用静态渐变细边提示可点击 */
-  .demo-entry::before {
-    opacity: 0 !important;
-  }
-
-  .demo-entry:hover::after,
-  .demo-entry:focus-visible::after {
-    opacity: 0.85;
   }
 
   /* 消息操作按钮：无 hover 动画时保持可见，避免「找不到按钮」 */

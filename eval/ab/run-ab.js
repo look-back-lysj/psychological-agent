@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 心屿 · A/B 对照实验采集脚本（纯 Node，无第三方依赖）
+ * 守岸人 · A/B 对照实验采集脚本（纯 Node，无第三方依赖）
  *
  * 唯一变量：环境变量 XINYU_AGENTS
  *   A 组 XINYU_AGENTS=on  —— 多智能体流水线（观 → 策略裁决 → 书 → 校）
@@ -89,7 +89,7 @@ function tailFile(file, lines) {
 
 function printHelp() {
   console.log([
-    '心屿 A/B 对照采集脚本',
+    '守岸人 A/B 对照采集脚本',
     '',
     '用法：node eval/ab/run-ab.js [选项]',
     '',
@@ -708,7 +708,7 @@ async function main() {
   if (opts.help) { printHelp(); return; }
 
   console.log('╔══════════════════════════════════════════════╗');
-  console.log('║  心屿 A/B 对照采集 · 多智能体 vs 单模型      ║');
+  console.log('║  守岸人 A/B 对照采集 · 多智能体 vs 单模型    ║');
   console.log('╚══════════════════════════════════════════════╝');
   console.log(`  项目根目录：${ROOT}`);
 

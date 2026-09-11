@@ -1,5 +1,5 @@
 /**
- * 心屿 · 多智能体内核
+ * 守岸人 · 多智能体内核
  *
  * 一轮对话的内部流水线（在规则层之后）：
  *   「观」Appraiser —— 读出情绪、需求、潜台词与节奏，并给出回复形态建议
@@ -166,7 +166,7 @@ function buildAppraisePrompt(ctx) {
     '【最近几轮】'
   ];
   const recent = (ctx.recentTurns || []).slice(-3)
-    .map(t => (t.role === 'assistant' ? '心屿：' : '用户：') + String(t.text || '').slice(0, 120));
+    .map(t => (t.role === 'assistant' ? '守岸人：' : '用户：') + String(t.text || '').slice(0, 120));
   lines.push(recent.length ? recent.join(NL) : '（这是第一轮）');
   lines.push('');
   lines.push('【规则层已判定的风险等级】' + (ctx.riskLevel || 'L0'));
@@ -369,7 +369,7 @@ function localScreen(draft, plan, shape) {
 }
 
 // ── 「校」提示词 ────────────────────────────────────────────────
-const CRITIC_SYSTEM = '你是一个只输出 JSON 的中文对话审校员，负责检查回复是否像「心屿」且不越界。';
+const CRITIC_SYSTEM = '你是一个只输出 JSON 的中文对话审校员，负责检查回复是否像「守岸人」且不越界。';
 
 function buildCriticPrompt(ctx, draft) {
   return [

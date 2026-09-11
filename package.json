@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "license": "UNLICENSED",
-  "description": "心屿 · 大学生情绪陪伴智能体",
+  "description": "守岸人 · 大学生情绪陪伴智能体",
   "main": "main.js",
   "scripts": {
     "start": "node main.js",

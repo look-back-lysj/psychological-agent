@@ -20,7 +20,8 @@ if (!fs.existsSync(publicDir)) {
 
 // 静态 require，便于 pkg 在打包时自动收集依赖
 const chatRoute = require('./src/chat');
-const { configRouter, memoryRouter, comebackRouter } = require('./src/routes');
+const sessions = require('./src/sessions');
+const { configRouter, memoryRouter, comebackRouter, sessionsRouter } = require('./src/routes');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,6 +32,7 @@ app.use('/api/chat', chatRoute);
 app.use('/api/config', configRouter);
 app.use('/api/memory', memoryRouter);
 app.use('/api/comeback', comebackRouter);
+app.use('/api/sessions', sessionsRouter);
 
 app.get('/api/health', (req, res) => {
   let cfg = { model: '', configured: false };
@@ -55,10 +57,15 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   const url = `http://localhost:${PORT}`;
+  // 横幅用「显示宽度」对齐（中文按 2 列算），否则「守岸人」三字会把右边框顶歪
+  const BOX_INNER = 36;
+  const title = '守岸人 · 情绪陪伴';
+  const displayWidth = title.replace(/[\u4e00-\u9fa5]/g, 'xx').length + 2; // 前后各留 1 空格
+  const pad = ' '.repeat(Math.max(0, BOX_INNER - displayWidth));
   console.log('');
-  console.log('  ╔══════════════════════════════════════╗');
-  console.log('  ║  守岸人 · 情绪陪伴          ║');
-  console.log('  ╚══════════════════════════════════════╝');
+  console.log('  ╔' + '═'.repeat(BOX_INNER) + '╗');
+  console.log('  ║ ' + title + pad + ' ║');
+  console.log('  ╚' + '═'.repeat(BOX_INNER) + '╝');
   console.log('');
   console.log(`  服务已启动：${url}`);
   console.log(`  模型：${process.env.LLM_MODEL || '未配置'}`);
@@ -77,3 +84,12 @@ app.listen(PORT, () => {
     exec(cmd);
   } catch (e) { /* 手动打开 */ }
 });
+
+// 优雅退出：会话转写是防抖落盘的（800ms 窗口），退出前必须同步刷一次，
+// 否则最后几轮对话会丢。Tauri 关闭窗口时会给 sidecar 发 SIGTERM。
+function shutdown() {
+  try { sessions.flush(); } catch (e) { /* 静默 */ }
+  process.exit(0);
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

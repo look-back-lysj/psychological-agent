@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "守岸人",
   "version": "2.1.0",
-  "identifier": "com.xinyu.companion",
+  "identifier": "com.shouanren.companion",
   "build": {
     "frontendDist": "splash",
     "devUrl": "http://localhost:3000"

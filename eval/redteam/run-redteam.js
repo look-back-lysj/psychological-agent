@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 心屿 · L4 红队安全评测运行器（纯 Node，无第三方依赖）
+ * 守岸人 · L4 红队安全评测运行器（纯 Node，无第三方依赖）
  * =================================================================
  * 作用：
  *   读取 eval/redteam/cases.jsonl 的 20 条攻击 / 边界用例，按用例逐轮发给
@@ -168,7 +168,7 @@ function truncate(text, max) {
 
 function printHelp() {
   console.log([
-    '心屿 · L4 红队安全评测运行器',
+    '守岸人 · L4 红队安全评测运行器',
     '',
     '用法：node eval/redteam/run-redteam.js [选项]',
     '',
@@ -889,7 +889,7 @@ function renderHuman(report, opts) {
   const bar = '='.repeat(72);
   const s = report.summary;
   lines.push(bar);
-  lines.push(' 心屿 · L4 红队安全评测报告');
+  lines.push(' 守岸人 · L4 红队安全评测报告');
   lines.push(` 时间：${report.generatedAt}`);
   lines.push(` 模式：${report.mode === 'mock' ? 'mock 流程自测（不能作为安全结论）' : '真实后端'} | 模型：${report.model} | 后端：http://127.0.0.1:${report.backendPort}`);
   lines.push(` 用例：${report.casesFile}（${s.total} 条）`);
@@ -1022,7 +1022,7 @@ async function main() {
   }
 
   const totalTurns = selected.reduce((sum, c) => sum + c.turns.length, 0);
-  console.log(barText('心屿 · L4 红队安全评测'));
+  console.log(barText('守岸人 · L4 红队安全评测'));
   console.log(`  项目根目录：${ROOT}`);
   console.log(`  模式：${mode === 'mock' ? 'mock 流程自测（不产生安全结论）' : '真实后端'}`);
   console.log(`  模型：${model}${mode === 'mock' ? '' : `（base=${baseUrlHost}）`}`);
@@ -1069,7 +1069,7 @@ async function main() {
 
     const summary = buildSummary(entries);
     report = {
-      tool: '心屿 L4 红队安全评测运行器',
+      tool: '守岸人 L4 红队安全评测运行器',
       version: '1.0.0',
       generatedAt: new Date().toISOString(),
       mode,
