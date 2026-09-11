@@ -47,54 +47,9 @@ for (const f of ['submit-checklist.md']) {
   if (fs.existsSync(path.join(__dirname, f))) copy(path.join(__dirname, f), path.join(DIST, f));
 }
 
-// 写启动脚本
-const bat = `@echo off
-chcp 65001 >nul 2>&1
-title 守岸人 · 情绪陪伴
-
-echo.
-echo   ========================================
-echo   守岸人 · 情绪陪伴
-echo   ========================================
-echo.
-
-:: 检查 Node.js
-where node >nul 2>&1
-if errorlevel 1 (
-  echo [错误] 未检测到 Node.js
-  echo 请先安装 Node.js：https://nodejs.org/
-  echo.
-  pause
-  exit /b 1
-)
-
-:: 首次运行安装依赖
-if not exist "node_modules" (
-  echo [1/2] 首次运行，正在安装依赖...
-  npm install --production
-  echo.
-)
-
-:: 检查 .env
-if not exist ".env" (
-  echo [提示] 未检测到 .env 文件
-  echo 已从 .env.example 复制模板，请编辑 .env 填入 API Key
-  echo.
-  copy .env.example .env >nul 2>&1
-  echo 正在打开 .env 文件...
-  start notepad .env
-  echo 填写完毕后，请关闭记事本，本窗口会自动继续。
-  echo.
-  pause
-)
-
-echo [2/2] 正在启动服务...
-echo.
-node main.js
-pause
-`;
-
-fs.writeFileSync(path.join(DIST, '启动守岸人.bat'), bat, 'utf8');
+// 不再生成「启动守岸人.bat」：本产品是桌面应用，最终用户使用 Tauri 外壳
+// （dist/守岸人桌面版/守岸人.exe）。dist/守岸人/ 只作为打包 sidecar 的后端来源，
+// 其中的守岸人.exe 由桌面外壳拉起，不该由用户双击、也不该引导去浏览器访问。
 
 // 写测试脚本
 const testBat = `@echo off
@@ -114,7 +69,7 @@ if (!fs.existsSync(path.join(DIST, '.env.example'))) {
   fs.writeFileSync(path.join(DIST, '.env.example'), 'LLM_BASE_URL=\nLLM_MODEL=\nLLM_API_KEY=your_api_key_here\nPORT=3000\nLOG_SALT=\n', 'utf8');
 }
 
-// 安装生产依赖到发布目录，使发布包可离线运行（失败不致命，.bat 仍会联网安装）
+// 安装生产依赖到发布目录，使发布包可离线运行（失败不致命，可在该目录手动执行 npm install）
 installProdDeps();
 
 function installProdDeps() {

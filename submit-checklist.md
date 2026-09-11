@@ -12,7 +12,7 @@
 - [x] `npm test` 通过（9/9）；
 - [x] `npm run bundle` 可生成发布目录；`npm run build` 可生成 exe；
 - [x] 界面截图已归档到 `docs/screenshots/`（含首次向导），并在 README 中引用；
-- [x] 首次启动向导可在网页内填写 DeepSeek API Key 并完成连通性自检；
+- [x] 首次启动向导可在桌面应用内填写 DeepSeek API Key 并完成连通性自检；
 - [x] 长期记忆可查看 / 编辑 / 置顶 / 删除 / 一键清空 / 整体关闭；
 - [x] 策略路由每轮输出可解释 JSON，界面「调试」开关可查看；
 - [x] 评测脚本 `npm test` 退出码为 0（正式 30/30 + 历史回归 9/9）；

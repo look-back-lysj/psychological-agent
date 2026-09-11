@@ -72,22 +72,25 @@ app.listen(PORT, HOST, () => {
   console.log('  ║ ' + title + pad + ' ║');
   console.log('  ╚' + '═'.repeat(BOX_INNER) + '╝');
   console.log('');
-  console.log(`  服务已启动：${url}`);
+  console.log(`  后端服务已就绪：${url}`);
   console.log(`  模型：${process.env.LLM_MODEL || '未配置'}`);
   console.log('');
-  console.log('  关闭此窗口即停止服务');
+  console.log('  本产品是桌面应用：界面由桌面外壳（守岸人.exe）的 WebView 加载；');
+  console.log('  此控制台只显示后端日志，关闭它即停止服务。');
   console.log('');
 
-  // 自动打开浏览器（设置 NO_BROWSER=1 可禁用，便于服务器/测试环境）
-  if (process.env.NO_BROWSER === '1') return;
-  console.log('  正在打开浏览器...');
+  // 默认不打开浏览器：本产品是桌面应用，界面由桌面外壳的 WebView 加载，
+  // 浏览器只是「排查问题时」的调试通道。仅当显式设置 OPEN_BROWSER=1 时才打开。
+  // （Tauri 外壳会传 NO_BROWSER=1，那是旧开关，现在默认即不打开，留着无害。）
+  if (process.env.OPEN_BROWSER !== '1') return;
+  console.log('  [调试] OPEN_BROWSER=1：正在打开调试页面...');
   try {
     const { exec } = require('child_process');
     const cmd = process.platform === 'win32' ? `start "" "${url}"`
       : process.platform === 'darwin' ? `open "${url}"`
       : `xdg-open "${url}"`;
     exec(cmd);
-  } catch (e) { /* 手动打开 */ }
+  } catch (e) { /* 打不开就算了，可手动复制上面的地址 */ }
 });
 
 // 优雅退出：会话转写是防抖落盘的（800ms 窗口），退出前必须同步刷一次，
