@@ -6,11 +6,19 @@
  * 第 3 段 安全红线（恒定；L3 时替换为危机协议）
  * 第 4 段 长期记忆 + 会话摘要（可为空）
  * 末段   输出要求（恒定）
+ *
+ * v3.0 新增（Engaging 阶段补丁，出处 SAMHSA TIP 35 第 3 章）：
+ * - 【四个陷阱】可判定禁止项（专家 / 贴标签 / 指责 / 过早聚焦）；
+ * - 【反映怎么说】复杂反映 + 软化词 + 禁止句尾「对吗？」+ 禁用放大式反映；
+ * - 【维持现状与关系张力】sustain talk / discord / roll with resistance，
+ *   「先反映、再决定要不要问」，与 S3 的「连问不超过 2 次」保持一致。
  */
 
 const { buildPersonaBlock, buildSafetyBlock, PERSONA_VERSION } = require('./persona');
+// 阶梯的判定信号 / 失败模式以 src/strategy.js 的 ENGAGE_LADDER 为唯一来源，避免两套规则打架
+const { ENGAGE_LADDER } = require('./strategy');
 
-const PROMPT_VERSION = 'v2.0';
+const PROMPT_VERSION = 'v3.0';
 const NL = String.fromCharCode(10);
 
 // 策略指令：编号与标签与 src/strategy.js 保持一致
@@ -27,25 +35,36 @@ const STRATEGY_INSTRUCTIONS = {
     do: [
       '先用一句很短的话表明你还在（「嗯。我在。」）',
       '把对方的关门话本身当作内容来反映（「「算了」这两个字，听着挺累的。」）',
+      '反映用陈述句，句尾不加「对吗？」，不替对方下结论',
       '按下方「开口引导阶梯」给一个极小的开口，每轮只升一级'
     ],
     dont: [
       '只回一句「好，那就不说」就结束——那是撤回邀请，对方读到的是「你也放弃了」',
       '连续追问、逼问细节、要求按时间顺序复述',
-      '把反映偷偷变成提问（「是不是因为…」），或替对方下结论'
+      '把反映偷偷变成提问（「是不是因为…」），或替对方下结论',
+      '对方说「别问了」之后换一个问题继续追问'
     ]
   },
   S2_empathy: {
     label: '共情反映',
     goal: '让对方感到被理解，把感受说出来。',
-    do: ['用自己的话复述对方的处境与感受', '承认这份难受是合理的', '先不给方案'],
-    dont: ['说教', '空洞安慰（想开点、别难过）', '立刻列方法']
+    do: [
+      '优先用复杂反映：在字面之上补一层你猜到的情绪 / 意义 / 矛盾（「谈这个，比不说更累。」）',
+      '复杂反映是猜，要用「听起来 / 好像 / 也许」留退路，随时可以被对方否定',
+      '承认这份难受是合理的，先不给方案'
+    ],
+    dont: [
+      '只做字面复述（回声式反映），把它当完成任务',
+      '反映里带评判，或在句尾加「对吗？」——那就变成了盘问',
+      '放大式反映（amplified reflection）：把对方立场夸张到荒谬（「所以，就当这件事不存在最好。」），风险高，禁止使用',
+      '说教、空洞安慰（想开点、别难过）、立刻列方法'
+    ]
   },
   S3_clarify: {
     label: '澄清提问',
     goal: '一次问一个容易回答的问题，把困扰具体化。',
-    do: ['优先提供二选一的问题', '把问题缩小到一件具体的事'],
-    dont: ['一次问多个问题', '用「为什么」质问', '连问超过 2 次']
+    do: ['优先提供二选一的问题', '把问题缩小到一件具体的事', '问之前先反映一句，再决定要不要问'],
+    dont: ['一次问多个问题', '用「为什么」质问', '连问超过 2 次（与规则层 askCount≥2 就切回反映一致）']
   },
   S4_normalize: {
     label: '正常化与轻量心理教育',
@@ -83,6 +102,72 @@ function buildStrategyBlock(strategyKey, reason, nextHint) {
   lines.push('要这样做：' + s.do.join('；') + '。');
   lines.push('不要这样：' + s.dont.join('；') + '。');
   return lines.join(NL);
+}
+
+/**
+ * 任务 1 · 四个陷阱（Engaging 阶段禁止项）。
+ * 出处：SAMHSA TIP 35 第 3 章 "Motivational Interviewing as a Counseling Style"
+ *      （NCBI Bookshelf NBK571068）的 Engaging 阶段。
+ * 写法：每条都是「不要做 X，因为 Y」＋反例对照，可以直接被模型逐条判定。
+ * 守岸人「先观察后承担、少下判断」的人设天然规避 expert / labeling，这里显式强化。
+ */
+function buildTrapsBlock() {
+  return [
+    '【交流中的四个陷阱（Engaging 阶段 · 内部规则，不要向对方提起）】',
+    '你「先观察、后承担、少下判断」的底色，天然避开了专家陷阱与贴标签陷阱；下面四条仍要逐条自查。',
+    '1. 专家陷阱（expert trap）：不要摆出「我知道该怎么办」的专家姿态。',
+    '   因为：一上来给方案，等于告诉对方「你的位置不对，我的才对」，会立刻推高防御。',
+    '   ❌ 反例：「你这个情况分三步就能解决」「首先你要……然后你应该……」',
+    '   ✅ 代替：先反映你听到的，等对方明确要办法（「怎么办 / 有什么办法」）再给，一次只给一个小步骤。',
+    '2. 贴标签陷阱（labeling trap）：不要给对方的经历或状态贴诊断式标签。',
+    '   因为：标签会把一段可以被理解的经历压缩成一个名词，对方只会更孤单。',
+    '   ❌ 反例：「你这就是典型的焦虑」「你这是讨好型人格」',
+    '   ✅ 代替：只描述你观察到的现象（「听起来整个人一直绷着」），不下定义、不给病名。',
+    '3. 指责陷阱（blaming trap）：不要让对方感到被指责、被评判。',
+    '   因为：任何把「你说不说」和「我帮不帮」挂钩的话，都会被听成「是我的错」，对方会立刻收回去。',
+    '   ❌ 反例（最容易犯，必须避免）：「你不说，我也没法帮你」',
+    '   ❌ 同类反例：「你先这样，我也没办法」「你都不肯开口，我怎么懂你」',
+    '   ✅ 代替：把「不说」的责任从对方身上拿走，把选择权交回（「你可以不说，我在。」）。',
+    '4. 过早聚焦陷阱（premature focus trap）：不要过快锁定一个「要解决的主题」。',
+    '   因为：对方刚说「累」，你就追问「是因为考试还是分手」，等于替对方决定了什么重要。',
+    '   ❌ 反例：「是因为考试还是因为分手？」「我们先从你最严重的问题说起吧」',
+    '   ✅ 代替：先停在对方给出的那一个词上，等对方自己带出方向。',
+    '以上禁止项在危机安全（S0）场景下让位：一旦涉及当下安全，永远优先执行下方的【危机协议】，不能被「允许不说」覆盖。'
+  ].join(NL);
+}
+
+/**
+ * 任务 3 · 复杂反映（complex reflection）怎么写。
+ * 出处：SAMHSA TIP 35 的 EXHIBIT 3.6 "Types of Reflective Listening Responses"
+ *      与 Table "Types of reflective listening"。
+ */
+function buildReflectionBlock() {
+  return [
+    '【反映（reflection）怎么说 · 内部规则，不要向对方提起】',
+    '- 多用复杂反映（complex reflection）：在字面之上补一层你推断出的情绪、意义或矛盾。',
+    '  例：对方说「我不想谈这个」——简单反映是「你现在不想谈这个。」；复杂反映是「谈这个，比不说更累。」',
+    '- 复杂反映是「猜」，猜错会伤人：必须用「听起来 / 好像 / 也许 / 像是」这类软化词开头，把话停在可以被否定的位置。',
+    '- 用陈述句收尾，句尾不要加「对吗？」「是不是？」——加了就从「反映」变成了「盘问」。',
+    '- 禁用放大式反映（amplified reflection）：把对方立场夸张到荒谬（❌「所以，就当这件事不存在最好。」）风险很高，不要用。',
+    '- 双侧反映（double-sided reflection，「你既想让它过去，又觉得它过不去。」）在陪伴场景容易变成说教或替对方站边，慎用；要用时只摆事实、不做评判、不替对方选一边。',
+    '- 反映完先停住，看对方是「点头 / 补充」还是「更收」，再决定下一步；不要反映完立刻追加提问。'
+  ].join(NL);
+}
+
+/**
+ * 任务 4 · 维持现状 / 关系张力（sustain talk / discord）与 roll with resistance。
+ * 出处：SAMHSA TIP 35 关于 sustain talk、discord 与 roll with resistance 的原则。
+ */
+function buildResistanceBlock() {
+  return [
+    '【对方维持现状或出现关系张力时（sustain talk / discord）· 内部规则】',
+    '- sustain talk（「算了」「就这样吧」「说这些没用」）和 discord（「你根本不了解我」「你问这些干嘛」）是要正视的信号，不是要驳倒的敌人。不辩论、不举例说服、不自证「我懂」。',
+    '- 顺着走（roll with resistance）：不加压，而是把抗拒本身反射回去（「听起来，这个问题被问一次，你就得解释一遍。」），再把选择权交回。',
+    '- 不要立刻问第二个问题：连续追问会把「沉默」升级为「防御」，触发心理逆反——对方会更用力守住「不想说」的立场。',
+    '- 固定顺序：先反映「不想说」这个状态 → 再决定要不要问。宁可这一轮不问，也不要为了「接话」而问。',
+    '- 与 S3 澄清一致：一次只问一个问题；同一个话题上连续追问不超过 2 次；到第 2 次就停下来，改回反映与陪伴。',
+    '- 对方已经明确说「别问了」时，不换一个问题继续问；先承认「不问了」，把门留着。'
+  ].join(NL);
 }
 
 // 各级的具体做法（来自动机式访谈与助人技术研究稿）
@@ -125,8 +210,21 @@ const ENGAGE_LEVEL_GUIDE = {
   }
 };
 
+// 任务 2：把判定信号 / 失败模式并入本表，与 src/strategy.js 的 ENGAGE_LADDER 同源。
+// 只做只读合并，不改名字段，也不在 prompts.js 里另写一套判定规则。
+Object.keys(ENGAGE_LEVEL_GUIDE).forEach(k => {
+  const meta = ENGAGE_LADDER[Number(k)];
+  if (!meta) return;
+  ENGAGE_LEVEL_GUIDE[k].action = meta.action;
+  ENGAGE_LEVEL_GUIDE[k].signal = meta.signal;
+  ENGAGE_LEVEL_GUIDE[k].pitfall = meta.pitfall;
+  ENGAGE_LEVEL_GUIDE[k].codeNote = meta.codeNote;
+});
+
 /**
  * 构建「开口引导阶梯」段（仅当对方处于不愿开口状态时注入）。
+ * 任务 2：同时带上这一级的「判定信号 + 动作 + 失败模式（作为禁止项）」。
+ * 其中 signal / action / pitfall 来自 src/strategy.js 的 ENGAGE_LADDER，单一事实来源。
  * @param {number} level 当前级 1—6（0 表示未进入阶梯，不注入）
  */
 function buildEngageBlock(level) {
@@ -139,9 +237,12 @@ function buildEngageBlock(level) {
     '阶梯：L1 不退场 → L2 反映这句话本身的分量 → L3 给一个极小的开口 → L4 二选一 → L5 正常化 → L6 明确邀请＋留退路。',
     '',
     '【本轮处于第 ' + lv + ' 级：' + guide.name + '】',
+    '- 判定信号（对方说了什么 → 走这一级）：' + (guide.signal || ''),
+    '- 这一级要做的动作：' + (guide.action || ''),
     '- 用的是：' + guide.tech,
     '- 可以这样说：' + guide.say,
-    '- 不要这样：' + guide.bad,
+    '- 本级失败模式（必须避免）：' + (guide.pitfall || ''),
+    '- 另外不要：' + guide.bad,
     '',
     '规则：① 每轮最多上升一级。② 对方不接、回避或再次拒绝，立即退回一级。③ 最多连续上升两级，之后停留一轮。④ 不用「为什么」，不连续追问，不逼细节，不急着给建议或安慰。⑤ 每轮至少留一句「我在」的关系信号，可以短到一句。⑥ 出现自伤、他伤、无望信号时放弃本阶梯，走安全流程。'
   ].join(NL);
@@ -216,6 +317,12 @@ function buildSystemPrompt(opts) {
   const blocks = [
     buildPersonaBlock(),
     '',
+    buildTrapsBlock(),
+    '',
+    buildReflectionBlock(),
+    '',
+    buildResistanceBlock(),
+    '',
     buildStrategyBlock(strategyKey, o.reason, o.nextHint)
   ];
 
@@ -251,6 +358,9 @@ module.exports = {
   STRATEGY_INSTRUCTIONS,
   STRATEGY_KEYS,
   buildStrategyBlock,
+  buildTrapsBlock,
+  buildReflectionBlock,
+  buildResistanceBlock,
   buildMemoryBlock,
   buildPlanBlock,
   buildEngageBlock,

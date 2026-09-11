@@ -111,9 +111,12 @@ function pickTimeOfDay(ts) {
 function pickMemoryHighlights() {
   try {
     const items = memory.listMemories() || [];
+    // 只浮起「仍生效」的条目：superseded / expired / dormant 都不该被当作
+    // 「我还记得你」的凭据展示，否则用户会看到一条早该忘掉或已过期的内容。
+    // sensitivity==='high' 永不展示——隐私硬保证，任何修改都不得移除这一条。
     const active = items.filter(it => it
       && typeof it.text === 'string' && it.text.trim()
-      && it.status !== 'superseded'
+      && it.status === 'active'
       && it.sensitivity !== 'high');
     return active.slice(0, MEMORY_TAG_LIMIT)
       .map(it => truncate(it.text.trim(), MEMORY_TAG_LEN))

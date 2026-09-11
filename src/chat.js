@@ -18,7 +18,7 @@ const { buildSystemPrompt, PROMPT_VERSION } = require('./prompts');
 const { PERSONA_VERSION } = require('./persona');
 const { callLLM, callLLMStream, getConfig } = require('./llm');
 const memory = require('./memory');
-const { AGENT_VERSION, appraise, resolveStrategy, localScreen, review,
+const { AGENT_VERSION, appraise, resolveStrategy, localScreen, review, isSafetyIssue, isSafetyDraft,
   decideTier, fallbackPlan, getCachedPlan } = require('./agents');
 const { describeInnerState, updateInnerState, replyShape } = require('./innerstate');
 const { logCall } = require('./logger');
@@ -70,27 +70,87 @@ function handleExplicitMemory(text) {
   return null;
 }
 
-/**
- * 后台异步抽取长期记忆（不阻塞回复，失败静默）。
- */
-function scheduleMemoryExtraction(sessionId) {
-  if (!sessionId) return;
-  if (countPendingTurns(sessionId) < EXTRACT_EVERY_TURNS) return;
-  if (extracting.has(sessionId)) return;
-  let cfg;
-  try { cfg = getConfig(); } catch (e) { return; }
-  if (!cfg.apiKey) return;
-  extracting.add(sessionId);
-  const turns = drainPendingTurns(sessionId);
+/** 一次真实的抽取调用（「攒够 3 轮」与「会话结束补抽」两条路径共用，保证语义一致）。 */
+function runExtraction(turns) {
   const convo = turns.map(t => '用户：' + t.user + NL + '守岸人：' + t.assistant).join(NL + NL);
-  memory.extractFromTurn({
+  return memory.extractFromTurn({
     userText: convo.slice(0, 1500),
     assistantText: '',
     callModel: async (prompt) => {
       const r = await callLLM('你是一个只输出 JSON 的信息抽取器。', [{ role: 'user', text: prompt }], { retries: 0 });
       return r.content;
     }
-  }).catch(() => {}).then(() => extracting.delete(sessionId));
+  });
+}
+
+/** 抽取前置条件：有 pending、没在抽取中、配了 Key。不满足时返回原因字符串（'' = 可以抽）。 */
+function extractionBlockReason(sessionId) {
+  if (!sessionId) return 'no_session';
+  if (extracting.has(sessionId)) return 'in_flight';
+  if (countPendingTurns(sessionId) < 1) return 'nothing_pending';
+  let cfg;
+  try { cfg = getConfig(); } catch (e) { return 'no_config'; }
+  if (!cfg.apiKey) return 'no_api_key';
+  return '';
+}
+
+/**
+ * 后台异步抽取长期记忆（不阻塞回复，失败静默）。
+ * 频率保持 EXTRACT_EVERY_TURNS = 3：攒够 3 轮才抽（与 Mem0「每对消息」、Zep「带最近 4 条上下文」
+ * 相比，这是更省额度的中位选择），本函数不改这个阈值。
+ */
+function scheduleMemoryExtraction(sessionId) {
+  if (!sessionId) return;
+  if (countPendingTurns(sessionId) < EXTRACT_EVERY_TURNS) return;
+  if (extractionBlockReason(sessionId)) return;
+  extracting.add(sessionId);
+  const turns = drainPendingTurns(sessionId);
+  runExtraction(turns).catch(() => {}).then(() => extracting.delete(sessionId));
+}
+
+/**
+ * 「会话结束」补抽：把 pending 里还没凑满 3 轮的对话立刻抽一次。
+ *
+ * 解决的问题：用户只聊了 1—2 轮就离开时，这些轮次会一直挂在 pendingTurns 里（或随进程退出丢失），
+ * 永远进不了长期记忆。本函数把阈值从「≥3 轮」放宽为「≥1 轮」，其余与 scheduleMemoryExtraction
+ * 完全一致（同一段 runExtraction、同一个 extracting 并发保护、同一个 Key 检查）。
+ *
+ * @param {string} sessionId
+ * @returns {Promise<{ok:boolean, reason:string, count?:number, added?:number}>} 永不 reject。
+ *
+ * ⚠️ 局限（如实说明）：真正的「进程退出」（Tauri 关闭窗口 → sidecar SIGTERM）来不及等这里发起
+ *    网络请求 —— main.js 的 shutdown 会同步 process.exit(0)。所以这里提供两个可用入口：
+ *    ① main.js 在 shutdown 里 await 本函数（需要 main.js 补接线，见报告），或
+ *    ② chat.js 内建的兜底：noteActiveSession() 在「用户切到另一个会话」时补抽上一个会话。
+ */
+function flushPendingExtraction(sessionId) {
+  try {
+    const blocked = extractionBlockReason(sessionId);
+    if (blocked) return Promise.resolve({ ok: false, reason: blocked });
+    extracting.add(sessionId);
+    const turns = drainPendingTurns(sessionId);
+    return runExtraction(turns)
+      .catch(() => ({ ok: false, reason: 'model_error', added: [] }))
+      .then((r) => {
+        extracting.delete(sessionId);
+        return r && typeof r === 'object' ? r : { ok: false, reason: 'unknown' };
+      });
+  } catch (e) {
+    return Promise.resolve({ ok: false, reason: 'error' });
+  }
+}
+
+// ── 会话切换兜底：切走时补抽上一个会话 ──────────────────────────
+// 前端「切换会话」= 换一个 sessionId 发请求。这里记住上一个活跃会话，换会话时给它补抽一次。
+// 单会话用户不受影响（prev === sessionId，不触发）；多会话交错时每切一次只补抽「刚离开的那个」，
+// pending 为空 / 正在抽取中都会直接跳过，不会重复抽取，也不阻塞本轮回复。
+let lastActiveSessionId = '';
+function noteActiveSession(sessionId) {
+  try {
+    const prev = lastActiveSessionId;
+    lastActiveSessionId = sessionId || '';
+    if (prev && prev !== sessionId) flushPendingExtraction(prev).catch(() => {});
+  } catch (e) { /* 静默，绝不影响对话 */ }
 }
 
 /**
@@ -156,6 +216,9 @@ function prepareTurn(body) {
   let sessionId = sanitizeText(body && body.sessionId, { maxLength: 100 });
   if (!sessionId) sessionId = FAKE_SESSION_PREFIX + crypto.randomUUID();
   ensureSession(sessionId);
+  // 会话结束补抽的兜底：如果这次请求换了一个 sessionId（用户切换了会话），
+  // 给上一个会话补抽一次长期记忆（不阻塞本轮回复）。
+  noteActiveSession(sessionId);
 
   // 可选字段 retry=true：前端「重新生成」重发同一条消息时，避免重复写入会话
   const retry = !!(body && body.retry === true);
@@ -219,10 +282,10 @@ function attachRetryMeta(agent, ctx) {
 async function generateReply(ctx, { stream, onDelta, signal }) {
   const { message, sessionId, inputSafety, decision } = ctx;
   const riskLevel = inputSafety.riskLevel;
-  const tierInfo = decideTierSafe(ctx);
 
-  // 危机场景：固定话术，不交给模型自由生成（也不走演示话术）
-  // 档位不参与危机协议：这里只做标注，方便前端排查，不代表跑了流水线。
+  // 危机场景：固定话术，不交给模型自由生成（也不走演示话术）。
+  // 放在档位判定之前：L3 从根本上进不了 decideTier 之后的任何模型调用分支，
+  // 所以「L3 不走模型」是结构性保证，而不是依赖 decideTier 恰好返回什么。
   if (riskLevel === 'L3') {
     const reply = (inputSafety.meta && inputSafety.meta.reply) || CRISIS_FALLBACK;
     return {
@@ -235,10 +298,12 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
         version: AGENT_VERSION,
         mode: 'crisis_fixed',
         tier: 'crisis',
-        tier_reason: 'L3 危机：走规则层固定协议，档位不参与，不调用模型'
+        tier_reason: 'L3 危机：走规则层固定协议（在档位判定之前拦截），不调用模型'
       }, ctx)
     };
   }
+
+  const tierInfo = decideTierSafe(ctx);
 
   // 免 Key 演示模式：在「观」等任何模型调用之前拦截，返回本地脚本回复。
   // 仍走完整的输出后置检查；失败一律静默，绝不阻塞回复。
@@ -321,16 +386,28 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
     usage = r.usage;
   }
 
-  // 「校」：本地快检发现问题才调用模型审校（省额度、保质量）
+  // 「校」的调用条件（v3.2 起收敛为唯一一个）：本地规则 localScreen() 命中。
+  // 未命中（issues 为空）→ 这里**不会**调用 review()，本轮只跑「观」+「书」（minimal 档只跑「书」）。
+  // 命中时 review() 的职责是「直接重写」，不是输出评审意见。
   const issues = localScreen(content, plan, shape);
-  let critic = { triggered: false, issues, revised: false };
+  let critic = { triggered: false, issues, revised: false, safety: false };
   if (issues.length) {
+    // 安全类命中（亲昵称呼 / 永久承诺等，与 safety.js 的 OUTPUT_BLOCK_PATTERNS 重叠）照常调「校」；
+    // 即便「校」降级返回原稿，后面的 checkOutputSafety() 仍会独立拦截 —— 安全兜底不依赖「校」。
+    // isSafetyDraft 直接复用 checkOutputSafety 的口径，避免被 localScreen「只报第一个 cliche」掩盖。
+    const safety = issues.some(isSafetyIssue) || isSafetyDraft(content);
     const rv = await review({ userText: message, strategyKey, riskLevel }, content);
-    critic = { triggered: true, issues: issues.concat(rv.issues || []), revised: false, degraded: !!rv.degraded };
+    critic = {
+      triggered: true,
+      issues: issues.concat(rv.issues || []),
+      revised: false,
+      degraded: !!rv.degraded,
+      safety
+    };
     if (rv.revised) { content = rv.revised; critic.revised = true; }
     // 触发「校」后档位升级为 reviewed（共 3 次调用）
     tier = 'reviewed';
-    tierReason = tierReason + '；本地快检命中（' + issues.slice(0, 2).join('、') + '），追加「校」审校';
+    tierReason = tierReason + '；本地快检命中（' + issues.slice(0, 2).join('、') + '），追加「校」重写';
   }
 
   const agent = attachRetryMeta({
@@ -603,5 +680,11 @@ router.post('/stream', async (req, res) => {
     });
   }
 });
+
+// 供外部在「会话结束」时调用：把 pending 里没凑满 3 轮的对话补抽一次。
+// 本模块默认导出仍是 Express Router（对外 HTTP 结构不变），函数挂在 Router 上，
+// 因此 main.js 可以：const chat = require('./src/chat'); await chat.flushPendingExtraction(id);
+router.flushPendingExtraction = flushPendingExtraction;
+router.extractNow = flushPendingExtraction; // 别名，语义相同
 
 module.exports = router;

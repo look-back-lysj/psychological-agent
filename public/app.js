@@ -24,6 +24,8 @@
     theme: 'psych.theme',
     debug: 'psych.debug.v1',
     setup: 'psych.setup.v1',
+    // 长期记忆的「单独同意」：'granted' / 'denied'；缺失表示尚未作出选择
+    memoryConsent: 'psych.memory.consent.v1',
   };
 
   const DEFAULT_TITLE = '新的对话';
@@ -204,6 +206,8 @@
     wizardModel: $('wizard-model'),
     wizardBaseUrl: $('wizard-baseurl'),
     wizardResult: $('wizard-result'),
+    wizardMemoryConsent: $('wizard-memory-consent'),
+    wizardMemoryDecline: $('wizard-memory-decline'),
 
     // 设置抽屉
     drawerScrim: $('drawer-scrim'),
@@ -273,6 +277,7 @@
   let composing = false;       // 输入法组合中
   let debugOn = false;         // 调试面板：显示策略路由证据
   let wizardStep = 1;          // 向导当前步骤
+  let wizardReturnToMemory = false; // 从「首次使用记忆」进入向导时，同意/拒绝后回到记忆面板
   let activeDrawer = '';       // 当前打开的抽屉 id（'' / 'settings' / 'memory'）
   let healthConfigured = null; // 最近一次健康检查的 configured 结果
   let configCache = null;      // 最近一次 GET /api/config 的 data
@@ -2639,6 +2644,11 @@
     if (el.wizardNext) el.wizardNext.addEventListener('click', wizardNext);
     if (el.wizardSkip) el.wizardSkip.addEventListener('click', function () { closeWizard(true); });
     if (el.wizardBackdrop) el.wizardBackdrop.addEventListener('click', function () { closeWizard(true); });
+    if (el.wizardMemoryConsent) {
+      // 未勾选时「下一步」保持禁用；勾选后才允许进入下一步并开启记忆
+      el.wizardMemoryConsent.addEventListener('change', updateWizardConsentGate);
+    }
+    if (el.wizardMemoryDecline) el.wizardMemoryDecline.addEventListener('click', declineMemoryConsent);
     if (el.wizardKeyEye) {
       el.wizardKeyEye.addEventListener('click', function () { togglePassword(el.wizardKey, el.wizardKeyEye); });
     }
@@ -2788,6 +2798,12 @@
   }
 
   function openDrawer(name, trigger) {
+    // 首次使用长期记忆：先把「单独同意」走完（PIPL 第 29 条），再打开面板
+    if (name === 'memory' && readMemoryConsent() === '') {
+      wizardReturnToMemory = true;
+      openWizard(2);
+      return;
+    }
     closeSidebar();
     activeDrawer = name;
     drawerReturnFocus = trigger || (document.activeElement !== document.body ? document.activeElement : null);
@@ -2889,8 +2905,70 @@
     try { localStorage.removeItem(LS_KEYS.setup); } catch (e) { /* 忽略 */ }
   }
 
+  /* ── 长期记忆的「单独同意」（PIPL 第 14 / 29 条）───────────────
+   * 充分知情 + 自愿、明确 + 单独同意；默认不勾选，未勾选不能开启记忆。
+   * 选择只记在本机 localStorage（LS_KEYS.memoryConsent），不每次启动都问。
+   */
+  function readMemoryConsent() {
+    try { return localStorage.getItem(LS_KEYS.memoryConsent) || ''; } catch (e) { return ''; }
+  }
+
+  function writeMemoryConsent(value) {
+    try { localStorage.setItem(LS_KEYS.memoryConsent, value); } catch (e) { /* 忽略 */ }
+  }
+
+  function hasMemoryConsent() {
+    return readMemoryConsent() === 'granted';
+  }
+
+  // 第 2 步的「下一步」：未勾选时禁用，勾选后才放开
+  function updateWizardConsentGate() {
+    if (!el.wizardNext || wizardStep !== 2) return;
+    el.wizardNext.disabled = !(el.wizardMemoryConsent && el.wizardMemoryConsent.checked);
+  }
+
+  function syncMemoryConsentStep() {
+    if (el.wizardMemoryConsent) el.wizardMemoryConsent.checked = hasMemoryConsent();
+    updateWizardConsentGate();
+  }
+
+  // 勾选同意：记住选择并开启记忆。enabled:true 只增不减，不会清空任何条目。
+  function grantMemoryConsent() {
+    if (!(el.wizardMemoryConsent && el.wizardMemoryConsent.checked)) {
+      updateWizardConsentGate();
+      return;
+    }
+    writeMemoryConsent('granted');
+    memoryEnabledCache = true;
+    if (el.memoryEnabled) el.memoryEnabled.checked = true;
+    // 不阻塞向导：开启是幂等的；失败也不影响聊天，后端默认即为开启
+    apiRequest('/api/memory/enabled', { method: 'POST', body: { enabled: true } })
+      .catch(function () { /* 忽略：后端默认开启，不影响主流程 */ });
+    if (afterMemoryConsent()) return;
+    showWizardStep(3);
+  }
+
+  // 拒绝勾选：记忆不开启，但聊天照常可用。
+  // ⚠️ 依协作约定：这里不调用「关闭记忆」接口——后端关闭会同时清空条目，
+  //    所以在向导里拒绝时只记录本地选择，绝不去触发破坏性清空。
+  function declineMemoryConsent() {
+    writeMemoryConsent('denied');
+    toast('已跳过长期记忆，聊天照常可用', 'success');
+    if (afterMemoryConsent()) return;
+    showWizardStep(3);
+  }
+
+  // 如果这次向导是被「打开记忆面板」触发的，做完同意/拒绝后回到记忆面板
+  function afterMemoryConsent() {
+    if (!wizardReturnToMemory) return false;
+    wizardReturnToMemory = false;
+    closeWizard(false);
+    window.setTimeout(function () { openDrawer('memory', el.openMemory); }, 260);
+    return true;
+  }
+
   function showWizardStep(step) {
-    wizardStep = Math.min(3, Math.max(1, Number(step) || 1));
+    wizardStep = Math.min(4, Math.max(1, Number(step) || 1));
     if (el.wizard) {
       const steps = el.wizard.querySelectorAll('.wizard__step');
       for (let i = 0; i < steps.length; i += 1) {
@@ -2904,8 +2982,10 @@
     if (el.wizardBack) setHidden(el.wizardBack, wizardStep === 1);
     if (el.wizardNext) {
       el.wizardNext.disabled = false;
-      el.wizardNext.textContent = wizardStep === 1 ? '开始设置' : (wizardStep === 2 ? '我拿到 Key 了' : '测试并保存');
+      el.wizardNext.textContent = wizardStep === 1 ? '开始设置'
+        : (wizardStep === 2 ? '同意并继续' : (wizardStep === 3 ? '我拿到 Key 了' : '测试并保存'));
     }
+    if (wizardStep === 2) syncMemoryConsentStep();
     setResult(el.wizardResult, '', '');
   }
 
@@ -2915,12 +2995,14 @@
     showLayer(el.wizard, 'is-open', 300); // 卡片滑入 + 缩放 + 淡入
     window.setTimeout(function () {
       if (el.wizard.hidden) return;
-      if (wizardStep === 3 && el.wizardKey) { try { el.wizardKey.focus(); } catch (e) { /* 忽略 */ } }
+      if (wizardStep === 4 && el.wizardKey) { try { el.wizardKey.focus(); } catch (e) { /* 忽略 */ } }
+      else if (wizardStep === 2 && el.wizardMemoryConsent) { try { el.wizardMemoryConsent.focus({ preventScroll: true }); } catch (e) { /* 忽略 */ } }
     }, 80);
   }
 
   function closeWizard(dismissed) {
     if (!el.wizard) return;
+    wizardReturnToMemory = false; // 非记忆入口触发的关闭，不再回到记忆面板
     if (dismissed) {
       try { localStorage.setItem(LS_KEYS.setup, 'dismissed'); } catch (e) { /* 忽略 */ }
     }
@@ -2976,7 +3058,8 @@
   }
 
   function wizardNext() {
-    if (wizardStep < 3) { showWizardStep(wizardStep + 1); return; }
+    if (wizardStep === 2) { grantMemoryConsent(); return; } // 未勾选时按钮是禁用的，这里再兜一次
+    if (wizardStep < 4) { showWizardStep(wizardStep + 1); return; }
     submitWizardConfig();
   }
 
@@ -3334,14 +3417,32 @@
   }
 
   async function toggleMemoryEnabled() {
-    const enabled = !!(el.memoryEnabled && el.memoryEnabled.checked);
+    const checkbox = el.memoryEnabled;
+    const enabled = !!(checkbox && checkbox.checked);
+
+    // ⚠️ 关闭记忆是破坏性操作：后端会同时清空所有条目（PIPL 第 47 条），必须二次确认。
+    // 取消时把开关拨回去，绝不静默清空。
+    if (!enabled) {
+      const agreed = await openConfirm({
+        title: '关闭长期记忆',
+        message: '关闭后守岸人不会再记住新内容；按当前的数据处理规则，已保存的记忆也会被一并清空，且无法恢复。确定关闭吗？',
+        confirmText: '关闭并清空',
+        danger: true,
+      });
+      if (!agreed) {
+        if (checkbox) checkbox.checked = true; // 撤销本次开关动作
+        return;
+      }
+    }
+
     memoryEnabledCache = enabled;
     try {
       await apiRequest('/api/memory/enabled', { method: 'POST', body: { enabled: enabled } });
-      toast(enabled ? '已开启长期记忆' : '已关闭长期记忆，已有记忆仍可查看', 'success');
+      toast(enabled ? '已开启长期记忆' : '已关闭长期记忆', 'success');
+      if (!enabled) await loadMemory(); // 关闭会清空条目，刷新面板以反映真实状态
     } catch (e) {
       memoryEnabledCache = !enabled;
-      if (el.memoryEnabled) el.memoryEnabled.checked = !enabled;
+      if (checkbox) checkbox.checked = !enabled;
       toastError(e, '开关没有保存成功，请稍后再试');
     }
     if (el.memoryFootNote) el.memoryFootNote.textContent = enabled ? '' : '记忆已关闭，不会再记住新内容';

@@ -185,7 +185,7 @@
           <span class="wizard__title" id="wizard-title">开始使用守岸人</span>
         </div>
         <div class="wizard__dots" id="wizard-dots" aria-hidden="true">
-          <i class="is-active"></i><i></i><i></i>
+          <i class="is-active"></i><i></i><i></i><i></i>
         </div>
       </header>
 
@@ -204,11 +204,33 @@
               <li>你可以随时在「记忆」里逐条查看、删除，或一键清空。</li>
             </ul>
           </div>
-          <p class="wizard__p wizard__p--soft">接下来只需要三步：注册账号、创建 API Key、粘贴进来测试一次。</p>
+          <p class="wizard__p wizard__p--soft">接下来还有几步：先确认长期记忆怎么用，再注册账号、创建 API Key、粘贴进来测试一次。</p>
         </section>
 
-        <!-- 第 2 步：获取 Key -->
+        <!-- 第 2 步：长期记忆的单独同意（默认不勾选，勾选后才生效） -->
         <section class="wizard__step" data-step="2">
+          <h2 class="wizard__h">关于长期记忆，想先问一句</h2>
+          <p class="wizard__p">守岸人可以把「对陪伴有用的稳定事实」记下来，下次接着聊时用得上。在开启之前，想先请你把下面几件事看清楚。</p>
+          <div class="notice">
+            <p class="notice__title">会记什么、记在哪里</p>
+            <ul>
+              <li><strong>只记稳定的事实</strong>：例如「最近在准备考研」「和室友关系有点紧张」。不记姓名、学号、联系方式这类身份信息。</li>
+              <li><strong>只存在这台电脑本地</strong>：保存为 <code>data/memory.json</code>。我们看不到，也不会上传到任何服务器——守岸人没有服务器。</li>
+              <li><strong>但每一轮对话仍会发给 DeepSeek</strong>：对话内容要通过你自己填写的 DeepSeek API Key 发出去，才能生成回复。请不要说任何不想让第三方看到的内容。</li>
+              <li><strong>你随时可以收回</strong>：在「记忆」里逐条查看、编辑、删除，或一键清空并关闭记忆。</li>
+            </ul>
+          </div>
+          <label class="switch switch--boxed">
+            <input type="checkbox" id="wizard-memory-consent" />
+            <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+            <span class="switch__text">我已读明白，并同意守岸人把上面这类稳定事实记在本机的 <code>data/memory.json</code> 里，用来让之后的陪伴更连贯。</span>
+          </label>
+          <p class="wizard__p wizard__p--soft">不想开启也可以：点下面的「先不用记忆」，聊天照常可用，只是下次要重新说起。</p>
+          <button class="link-btn" id="wizard-memory-decline" type="button">先不用记忆，继续设置</button>
+        </section>
+
+        <!-- 第 3 步：获取 Key -->
+        <section class="wizard__step" data-step="3">
           <h2 class="wizard__h">先拿到一把 API Key</h2>
           <p class="wizard__p">守岸人需要一个模型服务来生成回复。推荐 DeepSeek，注册和调用都在网页上完成。</p>
           <ol class="steps">
@@ -236,8 +258,8 @@
           <p class="wizard__p wizard__p--soft">如果暂时不想配置，也可以在下方选择「暂不配置，先看看界面」。</p>
         </section>
 
-        <!-- 第 3 步：填写并测试 -->
-        <section class="wizard__step" data-step="3">
+        <!-- 第 4 步：填写并测试 -->
+        <section class="wizard__step" data-step="4">
           <h2 class="wizard__h">粘贴 Key，我们测试一次</h2>
           <div class="field">
             <label class="field__label" for="wizard-key">DeepSeek API Key</label>
@@ -370,11 +392,11 @@
         <label class="switch switch--boxed">
           <input type="checkbox" id="memory-enabled" />
           <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
-          <span class="switch__text"><strong>启用长期记忆</strong><br />关闭后不会再记住新内容，已有记忆仍可查看。</span>
+          <span class="switch__text"><strong>启用长期记忆</strong><br />关闭后不会再记住新内容，已保存的记忆会被一并清空。</span>
         </label>
       </div>
 
-      <p class="note note--privacy">记忆只保存在这台电脑上，不会上传；你可以随时编辑或删除，也能一键清空。</p>
+      <p class="note note--privacy">记忆只保存在这台电脑本地（<code>data/memory.json</code>），不会上传；但每轮对话仍会经你自己的 DeepSeek Key 发给 DeepSeek。</p>
 
       <div class="field">
         <span class="field__label">手动添加一条</span>

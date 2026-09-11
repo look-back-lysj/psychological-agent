@@ -92,9 +92,36 @@ app.listen(PORT, HOST, () => {
 
 // 优雅退出：会话转写是防抖落盘的（800ms 窗口），退出前必须同步刷一次，
 // 否则最后几轮对话会丢。Tauri 关闭窗口时会给 sidecar 发 SIGTERM。
+let shuttingDown = false;
 function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
+  // 1) 先把会话转写同步落盘（这一步是同步的，必成）
   try { sessions.flush(); } catch (e) { /* 静默 */ }
-  process.exit(0);
+
+  // 2) 再尽力补抽一次「待抽取的长期记忆」。
+  //    注意：它是**异步网络请求**，所以不能直接 process.exit（那样请求发不完）。
+  //    给它一个 1.5 秒的窗口，超时就放弃——绝不能让退出卡住。
+  let pending = [];
+  try {
+    const chat = require('./src/chat');
+    if (chat && typeof chat.flushPendingExtraction === 'function') {
+      pending = [...sessions.sessions.keys()].map((id) => {
+        try { return Promise.resolve(chat.flushPendingExtraction(id)).catch(() => {}); }
+        catch (e) { return Promise.resolve(); }
+      });
+    }
+  } catch (e) { /* 静默：抽不出来也不能影响退出 */ }
+
+  const done = pending.length ? Promise.all(pending) : Promise.resolve();
+  Promise.race([done, new Promise((r) => setTimeout(r, 1500))])
+    .catch(() => {})
+    .then(() => {
+      // 补抽可能又写了新记忆/新转写，最后再刷一次盘
+      try { sessions.flush(); } catch (e) { /* 静默 */ }
+      process.exit(0);
+    });
 }
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
