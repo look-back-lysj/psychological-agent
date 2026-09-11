@@ -44,24 +44,30 @@ if (!TOKEN && !DRY) {
 // ── 待上传产物：中文名 → ASCII 名 ────────────────────────────────
 const SETUP_SRC = path.join(ROOT, 'dist', `守岸人_${VERSION}_x64-setup.exe`);
 const SETUP_NAME = `shouanren-${VERSION}-x64-setup.exe`;
-const ZIP_NAME = `shouanren-${VERSION}-node.zip`;
+// 第二个产物用「免安装绿色版」（Tauri 便携版），而不是 Node 源码包：
+// 便携版自带后端可执行文件，**不需要本机装 Node.js**，解压双击即用。
+// （早先叫 "-node.zip" 且指向 dist/守岸人/，但那个目录里是 pkg 打好的 56MB exe，
+//   既不需要 Node、又白白多 10MB 的 docs/devlog/tests，说明与内容自相矛盾。）
+const ZIP_NAME = `shouanren-${VERSION}-portable.zip`;
 const ZIP_PATH = path.join(ROOT, 'dist', ZIP_NAME);
-const NODE_DIR = path.join(ROOT, 'dist', '守岸人');
+const PORTABLE_DIR = path.join(ROOT, 'dist', '守岸人桌面版');
 
 function fail(msg) { console.error('❌ ' + msg); process.exit(1); }
 
-// ── 1. 打 zip ───────────────────────────────────────────────────
+// ── 1. 打 zip（免安装绿色版）─────────────────────────────────────
 function makeZip() {
-  if (!fs.existsSync(NODE_DIR)) fail('找不到 ' + NODE_DIR + '，请先运行 npm run desktop 或 build.js');
+  if (!fs.existsSync(PORTABLE_DIR)) {
+    fail('找不到 ' + PORTABLE_DIR + '，请先运行：node scripts/build-desktop.js');
+  }
   if (fs.existsSync(ZIP_PATH)) fs.rmSync(ZIP_PATH, { force: true });
-  console.log('① 打包免安装 Node 版…');
+  console.log('① 打包免安装绿色版…');
   if (process.platform === 'win32') {
     // 用 PowerShell 压缩；-Path 指向目录内容而非目录本身，避免多一层父目录
     execFileSync('powershell', ['-NoProfile', '-Command',
-      `Compress-Archive -Path '${NODE_DIR}\*' -DestinationPath '${ZIP_PATH}' -Force`
+      `Compress-Archive -Path '${PORTABLE_DIR}\\*' -DestinationPath '${ZIP_PATH}' -Force`
     ], { stdio: 'inherit' });
   } else {
-    execFileSync('zip', ['-r', '-q', ZIP_PATH, '.'], { cwd: NODE_DIR, stdio: 'inherit' });
+    execFileSync('zip', ['-r', '-q', ZIP_PATH, '.'], { cwd: PORTABLE_DIR, stdio: 'inherit' });
   }
   const size = (fs.statSync(ZIP_PATH).size / 1048576).toFixed(2);
   console.log('   -> ' + path.relative(ROOT, ZIP_PATH) + '  (' + size + ' MB)');
@@ -149,7 +155,7 @@ async function uploadAsset(release, filePath, asciiName) {
     console.log('（--dry-run：只检查产物，不调用 API）');
     console.log('安装包  : ' + path.relative(ROOT, SETUP_SRC));
     console.log('将被改名: ' + SETUP_NAME);
-    console.log('将打 zip: ' + ZIP_NAME);
+    console.log('将打 zip(绿色版): ' + ZIP_NAME);
     console.log('说明文件: ' + NOTES_FILE + (fs.existsSync(NOTES_FILE) ? '（存在）' : '（不存在，将用默认说明）'));
     return;
   }
