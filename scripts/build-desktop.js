@@ -263,12 +263,27 @@ if (!isDev) {
   for (const base of [targetRoot, plainRoot]) {
     const nsisDir = path.join(base, 'bundle', 'nsis');
     if (fs.existsSync(nsisDir)) {
-      const setup = fs.readdirSync(nsisDir).find(f => f.endsWith('.exe'));
+      // ⚠️ NSIS 输出目录会跨多次构建累积安装包（同一个 target 目录下会同时留着
+      // 旧版本的 setup.exe）。这里必须取「最新生成的那个」，否则会把上一次构建
+      // 的旧安装包当成本次产物复制到 dist/ —— 曾经因此把旧版本当成新版本发布。
+      const candidates = fs.readdirSync(nsisDir)
+        .filter(f => f.endsWith('.exe'))
+        .map(f => {
+          const full = path.join(nsisDir, f);
+          let mtime = 0;
+          try { mtime = fs.statSync(full).mtimeMs; } catch (e) { /* 忽略 */ }
+          return { f, mtime };
+        })
+        .sort((a, b) => b.mtime - a.mtime);   // 最新的排最前
+      const setup = candidates.length ? candidates[0].f : null;
       if (setup) {
         const dest = path.join(ROOT, 'dist', setup);
         fs.mkdirSync(path.dirname(dest), { recursive: true });
         fs.copyFileSync(path.join(nsisDir, setup), dest);
         console.log('   -> ' + path.relative(ROOT, dest));
+        if (candidates.length > 1) {
+          console.log('   （该目录还有 ' + (candidates.length - 1) + ' 个更早的安装包，已忽略）');
+        }
         break;
       }
     }

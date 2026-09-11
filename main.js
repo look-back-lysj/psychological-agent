@@ -55,7 +55,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ ok: false, error: '服务器内部错误' });
 });
 
-app.listen(PORT, () => {
+// 只监听回环地址：这个服务承载的是用户的私密对话，绝不能暴露到局域网。
+// 注意 app.listen(PORT) 默认绑定 0.0.0.0（所有网卡），同网段的人可以直接访问，
+// 因此必须显式绑定 127.0.0.1。
+const HOST = '127.0.0.1';
+
+app.listen(PORT, HOST, () => {
   const url = `http://localhost:${PORT}`;
   // 横幅用「显示宽度」对齐（中文按 2 列算），否则「守岸人」三字会把右边框顶歪
   const BOX_INNER = 36;
