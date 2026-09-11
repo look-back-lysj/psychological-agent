@@ -16,13 +16,14 @@
 | --- | --- |
 | ![安全优先](docs/screenshots/ui-03-safety.png) | ![深色模式](docs/screenshots/ui-04-dark.png) |
 
-| 首次启动向导 · 欢迎 | 首次启动向导 · 填写 Key |
+| 首次启动向导 · 欢迎 | 向导 · 记忆同意（v3.1 新增） |
 | --- | --- |
-| ![向导](docs/screenshots/ui-06-onboarding.png) | ![填写 Key](docs/screenshots/ui-07-onboarding-key.png) |
+| ![向导欢迎](docs/screenshots/ui-05-wizard-1.png) | ![记忆同意](docs/screenshots/ui-06-wizard-2-consent.png) |
 
-移动端自适应：
+| 向导 · 填写 API Key | 移动端自适应 |
+| --- | --- |
+| ![填写 Key](docs/screenshots/ui-07-wizard-3-key.png) | ![移动端](docs/screenshots/ui-08-mobile.png) |
 
-<img src="docs/screenshots/ui-05-mobile.png" alt="移动端" width="300" />
 
 ---
 
@@ -64,14 +65,14 @@ npm start
 
 | 形态 | 下载 | 说明 |
 | --- | --- | --- |
-| **桌面安装包（推荐）** | [`shouanren-3.1.0-x64-setup.exe`](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases/download/v3.1.0/shouanren-3.1.0-x64-setup.exe) | 约 17 MB，**当前用户安装，免管理员**，带开始菜单与卸载项 |
-| **免安装绿色版** | [`shouanren-3.1.0-win-x64-portable.zip`](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases/download/v3.1.0/shouanren-3.1.0-win-x64-portable.zip) | 解压后双击 `守岸人.exe`，**不用安装、也不用装 Node.js** |
+| **桌面安装包（推荐）** | [`shouanren-3.2.0-x64-setup.exe`](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases/download/v3.2.0/shouanren-3.2.0-x64-setup.exe) | 约 17 MB，**当前用户安装，免管理员**，带开始菜单与卸载项 |
+| **免安装绿色版** | [`shouanren-3.2.0-win-x64-portable.zip`](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases/download/v3.2.0/shouanren-3.2.0-win-x64-portable.zip) | 解压后双击 `守岸人.exe`，**不用安装、也不用装 Node.js** |
 | 本地：便携版 | `dist/守岸人桌面版/` | 双击 `守岸人.exe`，绿色免安装 |
-| 本地：安装包 | `dist/守岸人_3.1.0_x64-setup.exe` | 与在线版本一致 |
+| 本地：安装包 | `dist/守岸人_3.2.0_x64-setup.exe` | 与在线版本一致 |
 
 > 全部版本见 [Releases 页面](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases)。
 >
-> ⚠️ **请使用 v3.1.0 或更高版本。** v2.1.0 有三个关键问题：对话记录因随机端口导致每次重启丢失、模型被标注成旧名「心屿」、以及一个**自伤方法请求被误判为普通求助**的高危安全漏召回。
+> ⚠️ **请使用 v3.2.0 或更高版本。** v2.1.0 有三个关键问题：对话记录因随机端口导致每次重启丢失、模型被标注成旧名「心屿」、以及一个**自伤方法请求被误判为普通求助**的高危安全漏召回。
 
 桌面版做了什么：
 

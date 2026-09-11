@@ -21,6 +21,8 @@ const STATE_FILE_NAME = 'state.json';
 const MEMORY_TAG_LIMIT = 3;   // 浮起标签最多 3 条
 const MEMORY_TAG_LEN = 16;    // 每条标签截断到 16 字
 const LONG_GAP_HOURS = 72;    // 超过 72 小时视为「有一阵子没见」
+const VISIT_GAP_MS = 30 * 60 * 1000; // 距上次见到超过 30 分钟才算「新的一次来访」
+                                     // （前端会在同一会话内重复拉取本接口，不能每次都计入）
 const HOUR_MS = 3600000;
 const DAY_MS = 86400000;
 
@@ -280,7 +282,12 @@ function getComeback() {
 
   const firstVisit = !prev.lastSeenAt;
   const hoursSince = prev.lastSeenAt ? Math.max(0, (now - prev.lastSeenAt) / HOUR_MS) : null;
-  const visitCount = (prev.visitCount || 0) + 1;
+  // visitCount 的语义是「用户回来了几次」，不是「这个接口被调了几次」。
+  // 前端会在同一会话内重复拉取本接口（有 5 秒缓存，超时后会再拉），
+  // 若每次都 +1，visitCount 会被迅速抬高（实测一次启动就涨到 3）。
+  // 所以只有「距上次见到超过 VISIT_GAP_MS」才算一次新的来访。
+  const isNewVisit = !prev.lastSeenAt || (now - prev.lastSeenAt) > VISIT_GAP_MS;
+  const visitCount = isNewVisit ? (prev.visitCount || 0) + 1 : Math.max(1, prev.visitCount || 1);
   const timeOfDay = pickTimeOfDay(now);
   const memoryHighlights = pickMemoryHighlights();
   const seed = visitCount + Math.floor(now / DAY_MS);

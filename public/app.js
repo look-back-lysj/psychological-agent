@@ -83,9 +83,7 @@
     model_network: '网络连接不太顺畅',
   };
 
-  // 拟人化节奏（毫秒）
-  const THINK_MIN_MS = 500;
-  const THINK_MAX_MS = 1200;
+  // 等待信号：首字 fallback 只锚定真实模型延迟，不在请求前人为加固定等待
   const FIRST_TOKEN_MS = 900;
   const PART_GAP_MIN = 350;
   const PART_GAP_MAX = 800;
@@ -98,9 +96,9 @@
   const COPY_FAIL_TEXT = '复制失败，请手动选中文字复制';
   const FALLBACK_TOAST = '连接不太顺畅，已改用备用方式回复';
   const NET_FAIL_TOAST = '网络似乎断开了，稍后再试试';
-  const GENERATING_TOAST = '上一条还在回复中，请稍候';
+  const GENERATING_TOAST = '上一条还没说完，我先等它一下';
   const ERROR_TOAST = '生成回复时出了点小状况，我先在这儿陪你';
-  const WAIT_TEXT = '正在想怎么接你的话…';
+  const WAIT_TEXT = '我在听';
   const NET_TIMEOUT_TOAST = '连接超时了，稍后再试试';
   const CONFIG_SAVED_TOAST = '设置已保存';
   const MEMORY_SAVED_TOAST = '已添加一条记忆';
@@ -125,11 +123,36 @@
     { prompt: '我该怎么调整自己的状态？', label: '想问问怎么调整状态' },
   ];
 
-  const SCROLL_THRESHOLD = 96; // px：距底部多近算“在底部附近”
+  const SCROLL_THRESHOLD = 56; // px：距底部多近算“在底部附近”（48–64，避免上滚时被反复拉回）
   const DOTS_HTML = '<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>';
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const NUL = '\u0000';
+
+  // 统一动效令牌：优先读 CSS 变量，读不到时回退到 style.css 约定的默认值（保证不出现 NaN）
+  const MOTION = (function () {
+    function readMs(name, fallback) {
+      let raw = '';
+      try {
+        if (typeof document === 'undefined' || !document.documentElement) return fallback;
+        raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      } catch (e) { return fallback; }
+      if (!raw) return fallback;
+      const num = parseFloat(raw);
+      if (!Number.isFinite(num) || num < 0) return fallback;
+      if (/ms$/i.test(raw)) return num;
+      if (/s$/i.test(raw)) return num * 1000;
+      return num;
+    }
+    return {
+      fast: readMs('--dur-fast', 100),
+      base: readMs('--dur', 150),
+      mid: readMs('--dur-mid', 200),
+      slow: readMs('--dur-slow', 250),
+      enter: readMs('--dur-enter', 300),
+      theme: readMs('--dur-theme', 200),
+    };
+  }());
 
   // Markdown 行内规则（全局正则，配合 String.replace 使用是安全的）
   const RE_INLINE_CODE = /`([^`\n]+)`/g;
@@ -165,6 +188,7 @@
     statusPill: $('status-pill'),
     chat: $('chat'),
     messages: $('messages'),
+    messagesEnd: $('messages-end'),
     srLive: $('sr-live'),
     welcome: $('welcome'),
     suggestions: $('suggestions'),
@@ -274,6 +298,7 @@
   let pending = null;          // 正在流式更新的助手消息 { session, msg, index, el }
   let rafId = 0;               // 流式渲染的 requestAnimationFrame 句柄
   let stickBottom = true;      // 是否自动吸附到底部
+  let messagesEndObserver = null; // 底部锚点观察器：用户上滚即暂停跟随
   let composing = false;       // 输入法组合中
   let debugOn = false;         // 调试面板：显示策略路由证据
   let wizardStep = 1;          // 向导当前步骤
@@ -518,14 +543,6 @@
     setExpanded(el.openShortcuts, isShortcutsOpen());
   }
 
-  function sleep(ms) {
-    return new Promise((resolve) => { window.setTimeout(resolve, Math.max(0, Number(ms) || 0)); });
-  }
-
-  function randomBetween(min, max) {
-    return min + Math.random() * (max - min);
-  }
-
   // 取 350–800ms 之间、对同一条消息稳定的间隔（避免重渲染时跳动）
   function stableGap(seed, index) {
     const n = Math.abs(Number(seed) || 0) + index * 173;
@@ -567,7 +584,7 @@
     const timer = window.setTimeout(function () {
       layerCleanup.delete(node);
       node.classList.remove('is-animating');
-    }, reducedMotion() ? 0 : Math.max(120, Number(ms) || 240));
+    }, reducedMotion() ? 0 : Math.max(MOTION.fast, Number(ms) || MOTION.slow));
     layerCleanup.set(node, timer);
   }
 
@@ -577,7 +594,7 @@
     if (pending) { window.clearTimeout(pending); layerTimers.delete(node); }
     node.classList.remove('is-closing');
     setHidden(node, false);
-    markAnimating(node, duration || 260);
+    markAnimating(node, duration || MOTION.slow);
     // 先以闭合态渲染一帧，再加 is-open，过渡才有起点
     nextFrame(function () {
       if (node.hidden || node.classList.contains('is-closing')) return;
@@ -592,10 +609,10 @@
       return;
     }
     if (node.classList.contains('is-closing')) return; // 已在退场中，避免重复
-    const wait = layerDelay(duration || 200);
+    const wait = layerDelay(duration || MOTION.mid);
     node.classList.remove('is-open');
     node.classList.add('is-closing');
-    markAnimating(node, wait + 80);
+    markAnimating(node, wait + MOTION.fast);
     const timer = window.setTimeout(function () {
       layerTimers.delete(node);
       node.classList.remove('is-closing', 'is-animating');
@@ -630,7 +647,7 @@
       layerTimers.delete(dialog);
       dialog.classList.remove('is-closing');
       try { if (dialog.open) dialog.close(); } catch (e) { /* 忽略 */ }
-    }, layerDelay(duration || 190));
+    }, layerDelay(duration || MOTION.mid));
     layerTimers.set(dialog, timer);
   }
 
@@ -647,8 +664,19 @@
     dot.style.height = size + 'px';
     dot.style.left = (rect.width / 2 - size / 2) + 'px';
     dot.style.top = (rect.height / 2 - size / 2) + 'px';
+    // 涟漪依赖宿主定位与裁切；如果 CSS 尚未为某个按钮准备，临时补上，动画结束后还原。
+    const prevPosition = btn.style.position;
+    const prevOverflow = btn.style.overflow;
+    let computed = null;
+    try { computed = getComputedStyle(btn); } catch (e) { computed = null; }
+    if (computed && computed.position === 'static') btn.style.position = 'relative';
+    if (computed && computed.overflow === 'visible') btn.style.overflow = 'hidden';
     btn.appendChild(dot);
-    window.setTimeout(function () { if (dot.parentNode) dot.parentNode.removeChild(dot); }, 620);
+    window.setTimeout(function () {
+      if (dot.parentNode) dot.parentNode.removeChild(dot);
+      btn.style.position = prevPosition;
+      btn.style.overflow = prevOverflow;
+    }, MOTION.enter * 2);
   }
 
   function pressFeedback(btn) {
@@ -656,7 +684,7 @@
     lastRippleAt = now();
     ripple(btn);
     btn.classList.add('is-pressing');
-    window.setTimeout(function () { btn.classList.remove('is-pressing'); }, 160);
+    window.setTimeout(function () { btn.classList.remove('is-pressing'); }, MOTION.base);
   }
 
   // 键盘 / 表单提交路径的反馈：按钮快速回弹一下
@@ -667,7 +695,7 @@
     btn.classList.remove('is-pulse');
     void btn.offsetWidth; // 重启动画
     btn.classList.add('is-pulse');
-    window.setTimeout(function () { btn.classList.remove('is-pulse'); }, 300);
+    window.setTimeout(function () { btn.classList.remove('is-pulse'); }, MOTION.enter);
     ripple(btn);
   }
 
@@ -1204,7 +1232,7 @@
       } else {
         content.innerHTML = DOTS_HTML;
       }
-      bubble.setAttribute('aria-label', msg.waitingText || '守岸人正在输入');
+      bubble.setAttribute('aria-label', msg.waitingText || '我在听');
       bubble.appendChild(content);
       box.appendChild(bubble);
       return;
@@ -1408,7 +1436,10 @@
       if (animate && index >= from) {
         node.classList.add('is-enter');
         const step = index - from;
-        if (step > 0) node.style.animationDelay = Math.round(step * 70) + 'ms';
+        // 阶梯交给 CSS 的 animation-delay: calc(var(--i) * 40ms) 统一处理（C3：≤40ms）。
+        // ⚠️ 不要在这里写内联 animationDelay——内联优先级高于 CSS，会盖掉那 40ms，
+        // 让阶梯又变回 70ms（原先正是 70ms）。
+        if (step > 0) node.style.setProperty('--i', String(step));
       }
       el.messages.appendChild(node);
     });
@@ -1500,8 +1531,9 @@
   }
 
   function scrollToBottom(smooth) {
+    const useSmooth = !!smooth && !reducedMotion();
     scrollables().forEach((node) => {
-      if (smooth) {
+      if (useSmooth) {
         try { node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' }); }
         catch (e) { node.scrollTop = node.scrollHeight; }
         return;
@@ -1541,11 +1573,45 @@
     btn.classList.remove('is-visible');
     window.setTimeout(function () {
       if (!scrollBtnVisible) setHidden(btn, true); // 退场动画结束后再移出布局
-    }, layerDelay(180));
+    }, layerDelay(MOTION.mid));
+  }
+
+  // 底部锚点：用户一离开底部就停下自动跟随；阈值法作为无 IntersectionObserver 时的兜底。
+  function ensureBottomAnchor() {
+    let node = el.messagesEnd;
+    if (!node) {
+      node = document.createElement('div');
+      node.id = 'messages-end';
+      node.setAttribute('aria-hidden', 'true');
+      if (el.chat) el.chat.appendChild(node);
+      el.messagesEnd = node;
+    }
+    // 1px 高度：部分浏览器对 0 高度目标的交叉判定不稳定；它只是布局锚点。
+    node.style.height = '1px';
+    node.style.flex = '0 0 auto';
+    node.style.pointerEvents = 'none';
+    return node;
+  }
+
+  function initBottomObserver() {
+    const anchor = ensureBottomAnchor();
+    if (!anchor || !el.chat || typeof window.IntersectionObserver !== 'function') return;
+    if (messagesEndObserver) messagesEndObserver.disconnect();
+    messagesEndObserver = new window.IntersectionObserver(function (entries) {
+      const entry = entries && entries.length ? entries[entries.length - 1] : null;
+      if (!entry) return;
+      if (entry.isIntersecting) {
+        if (!stickBottom) { stickBottom = true; updateScrollButton(); }
+        return;
+      }
+      if (stickBottom) { stickBottom = false; updateScrollButton(); }
+    }, { root: el.chat, threshold: 0, rootMargin: '0px' });
+    try { messagesEndObserver.observe(anchor); } catch (e) { /* 忽略：阈值法兜底 */ }
   }
 
   function handleScroll() {
-    stickBottom = isNearBottom();
+    // 有 IntersectionObserver 时以底部锚点为准；没有时退回 56px 阈值法。
+    if (!messagesEndObserver) stickBottom = isNearBottom();
     updateScrollButton();
   }
 
@@ -1566,13 +1632,13 @@
     el.toasts.appendChild(node);
     window.setTimeout(() => {
       node.classList.add('is-leaving');
-      window.setTimeout(() => { if (node.parentNode) node.parentNode.removeChild(node); }, 320);
+      window.setTimeout(() => { if (node.parentNode) node.parentNode.removeChild(node); }, MOTION.enter);
     }, 3000);
   }
 
-  // 读屏播报：只在「一条回复完成」时写一次，且截断到 200 字，
-  // 避免流式重渲染让 aria-live 反复朗读整段对话。
-  function announceMessage(text) {
+  // 读屏播报：只写离散状态（已复制 / 已回到最新），不播报流式正文。
+  // 正文由 #messages[role="log"] 在 aria-busy=false 后一次性朗读。
+  function announceStatus(text) {
     if (!el.srLive) return;
     const clean = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
     if (!clean) return;
@@ -1583,6 +1649,12 @@
     window.setTimeout(function () {
       if (el.srLive) el.srLive.textContent = clipped;
     }, 30);
+  }
+
+  // 流式期间把消息日志设为忙：辅助技术会等收尾后一次性播报，避免逐 token 刷屏
+  function setMessagesBusy(busy) {
+    if (!el.messages) return;
+    el.messages.setAttribute('aria-busy', busy ? 'true' : 'false');
   }
 
   /* ============================================================
@@ -1896,8 +1968,7 @@
     }
     pending = null;
 
-    // 无障碍：整条回复完成后再播报一次，流式过程不打扰读屏
-    try { announceMessage(assistant.content); } catch (e) { /* 播报失败不影响主流程 */ }
+    // 无障碍：正文交给 #messages[role="log"]；#sr-live 只负责离散状态提示。
 
     saveState();
     try {
@@ -1912,6 +1983,7 @@
 
   async function startGeneration(text, session, assistant, isRetry) {
     generating = true;
+    setMessagesBusy(true);
     syncComposer();
 
     const controller = new AbortController();
@@ -1920,10 +1992,10 @@
     let waitTimer = 0;
 
     try {
-      // 拟人化：先让「正在输入…」停留 500–1200ms，再真正发起请求（期间可点停止）
+      // 不在请求前人为等待：占位/打字信号覆盖真实网络与模型延迟。
+      // 若 900ms 内没有第一个 delta，再把占位换成「我在听」。
       assistant.gotDelta = false;
       assistant.waitingText = '';
-      await sleep(randomBetween(THINK_MIN_MS, THINK_MAX_MS));
       if (controller.signal.aborted) { aborted = true; return; }
 
       // 首字兜底：900ms 内没有第一个 delta，就把占位文案换成更自然的一句
@@ -1969,6 +2041,7 @@
         assistant.stopped = true;
       }
       try { finalizeTurn(session, assistant); } catch (e) { /* 保证绝不卡在“正在回复…” */ }
+      setMessagesBusy(false);
       generating = false;
       if (activeController === controller) activeController = null;
       try { syncComposer(); autosize(); } catch (e) { /* 忽略 */ }
@@ -2002,12 +2075,13 @@
     // 发送后输入框高度平滑回落（只在回落这一下挂 transition，打字时不做布局动画）
     if (!reducedMotion()) {
       el.input.classList.add('is-collapsing');
-      window.setTimeout(function () { el.input.classList.remove('is-collapsing'); }, 240);
+      window.setTimeout(function () { el.input.classList.remove('is-collapsing'); }, MOTION.base);
     }
     autosize();
     syncComposer();
     sendPulse();
 
+    setMessagesBusy(true);
     renderMessages(session.messages.length - 2); // 本轮的用户消息 + 助手占位依次入场
     renderSessionList();
     updateTitle(session);
@@ -2063,6 +2137,7 @@
     msg.ts = now();
     session.updatedAt = now();
 
+    setMessagesBusy(true);
     renderMessages(index); // 重试时该条回复重新入场
     stickBottom = true;
     updateScrollButton();
@@ -2146,7 +2221,7 @@
     const li = sessionListItem(id);
     if (li && !reducedMotion()) {
       li.classList.add('is-leaving');
-      window.setTimeout(remove, 200);
+      window.setTimeout(remove, MOTION.mid);
     } else {
       remove();
     }
@@ -2216,7 +2291,7 @@
       themeAnimTimer = window.setTimeout(function () {
         themeAnimTimer = 0;
         root.classList.remove('is-theme-anim');
-      }, 280);
+      }, MOTION.theme);
     }
     applyTheme(next);
     try { localStorage.setItem(LS_KEYS.theme, next); } catch (e) { /* 忽略 */ }
@@ -2240,8 +2315,12 @@
       try { await navigator.clipboard.writeText(value); ok = true; } catch (e) { ok = false; }
     }
     if (!ok) ok = legacyCopy(value);
-    if (ok) markCopied(btn); // 按钮短暂变成「✓ 已复制」
-    toast(ok ? COPY_OK_TEXT : COPY_FAIL_TEXT, ok ? 'success' : 'error');
+    if (ok) {
+      markCopied(btn); // 按钮短暂变成「✓ 已复制」
+      announceStatus(COPY_OK_TEXT); // 离散状态走 #sr-live；避免与正文播报混用
+    } else {
+      toast(COPY_FAIL_TEXT, 'error');
+    }
   }
 
   function legacyCopy(value) {
@@ -2278,7 +2357,7 @@
 
   // 健康检查：同时维护「未配置模型」提示与首次启动向导
   async function refreshHealth(silent) {
-    if (!silent) setHealth('loading', '连接中…', '模型检测中…');
+    if (!silent) setHealth('loading', '正在确认连接', '模型还在确认');
     try {
       const res = await fetch('/api/health', { cache: 'no-store' });
       if (!res.ok) throw makeApiError('http_' + res.status, res.status);
@@ -2580,6 +2659,11 @@
 
     // 消息操作（复制 / 重试）
     if (el.messages) {
+      el.messages.addEventListener('pointerdown', function (e) {
+        const btn = e.target.closest('button.msg__action');
+        if (!btn || btn.disabled) return; // 禁用态不给按下动画
+        pressFeedback(btn);
+      });
       el.messages.addEventListener('click', function (e) {
         const btn = e.target.closest('button.msg__action');
         if (!btn) return;
@@ -2602,6 +2686,7 @@
         stickBottom = true;
         updateScrollButton();
         scrollToBottom(true);
+        announceStatus('已回到最新');
       });
     }
 
@@ -2752,7 +2837,7 @@
     // 尺寸变化：重算输入框高度与滚动状态，并同步侧边栏的可见性/无障碍状态
     window.addEventListener('resize', function () {
       autosize();
-      stickBottom = isNearBottom();
+      if (!messagesEndObserver) stickBottom = isNearBottom();
       updateScrollButton();
       syncSidebarHidden();
       syncLayerAria();
@@ -2809,11 +2894,11 @@
     drawerReturnFocus = trigger || (document.activeElement !== document.body ? document.activeElement : null);
     const panel = name === 'settings' ? el.settingsDrawer : (name === 'memory' ? el.memoryDrawer : null);
     const other = name === 'settings' ? el.memoryDrawer : el.settingsDrawer;
-    hideLayer(other, 160);                       // 两个抽屉互斥：另一个播退场
+    hideLayer(other, MOTION.base);               // 两个抽屉互斥：另一个播退场
     setLayerHidden(other, true);                 // 隐藏中的抽屉不可聚焦
     setLayerHidden(panel, false);                // 目标抽屉可见 -> 解除 inert
-    showLayer(el.drawerScrim, 'is-open', 220);   // 遮罩淡入（关闭时同样有淡出）
-    showLayer(panel, 'is-open', 280);            // 滑入 + 缩放 + 淡入
+    showLayer(el.drawerScrim, 'is-open', MOTION.mid);   // 遮罩淡入（关闭时同样有淡出）
+    showLayer(panel, 'is-open', MOTION.enter);   // 滑入 + 缩放 + 淡入
     syncLayerAria();
     if (name === 'settings') loadConfig();
     else if (name === 'memory') loadMemory();
@@ -2831,9 +2916,9 @@
     activeDrawer = '';
     const target = drawerReturnFocus;
     drawerReturnFocus = null;
-    hideLayer(el.settingsDrawer, 200);
-    hideLayer(el.memoryDrawer, 200);
-    hideLayer(el.drawerScrim, 200);
+    hideLayer(el.settingsDrawer, MOTION.mid);
+    hideLayer(el.memoryDrawer, MOTION.mid);
+    hideLayer(el.drawerScrim, MOTION.mid);
     setLayerHidden(el.settingsDrawer, true);  // 关闭后立即移出无障碍树与 Tab 序列
     setLayerHidden(el.memoryDrawer, true);
     syncLayerAria();
@@ -2865,10 +2950,10 @@
     if (!el.shortcutsModal) return;
     const target = shortcutsReturnFocus;
     shortcutsReturnFocus = null;
-    closeDialog(el.shortcutsModal, 190);
+    closeDialog(el.shortcutsModal, MOTION.mid);
     syncLayerAria();
     // <dialog> close() 之后焦点会回到打开前的元素，这里再兜一次
-    window.setTimeout(function () { returnFocusTo(target, null); }, layerDelay(220));
+    window.setTimeout(function () { returnFocusTo(target, null); }, layerDelay(MOTION.mid));
   }
 
   function isWizardOpen() {
@@ -2963,7 +3048,7 @@
     if (!wizardReturnToMemory) return false;
     wizardReturnToMemory = false;
     closeWizard(false);
-    window.setTimeout(function () { openDrawer('memory', el.openMemory); }, 260);
+    window.setTimeout(function () { openDrawer('memory', el.openMemory); }, MOTION.slow);
     return true;
   }
 
@@ -2992,7 +3077,7 @@
   function openWizard(step) {
     if (!el.wizard) return;
     showWizardStep(step || 1);
-    showLayer(el.wizard, 'is-open', 300); // 卡片滑入 + 缩放 + 淡入
+    showLayer(el.wizard, 'is-open', MOTION.enter); // 卡片滑入 + 缩放 + 淡入
     window.setTimeout(function () {
       if (el.wizard.hidden) return;
       if (wizardStep === 4 && el.wizardKey) { try { el.wizardKey.focus(); } catch (e) { /* 忽略 */ } }
@@ -3007,7 +3092,7 @@
       try { localStorage.setItem(LS_KEYS.setup, 'dismissed'); } catch (e) { /* 忽略 */ }
     }
     // 先播退场动画，动画结束后再隐藏并归还焦点
-    hideLayer(el.wizard, 220, function () {
+    hideLayer(el.wizard, MOTION.mid, function () {
       if (healthConfigured === false) setHidden(el.modelWarn, false);
       focusInput();
     });
@@ -3025,8 +3110,8 @@
     const patch = { apiKey: key, model: model };
     if (baseUrl) patch.baseUrl = baseUrl;
 
-    if (el.wizardNext) { el.wizardNext.disabled = true; el.wizardNext.textContent = '正在测试…'; }
-    setResult(el.wizardResult, 'loading', '正在保存配置并尝试连接模型…');
+    if (el.wizardNext) { el.wizardNext.disabled = true; el.wizardNext.textContent = '正在试连接'; }
+    setResult(el.wizardResult, 'loading', '正在保存设置，并确认模型是否可用。');
     let success = false;
     try {
       await apiRequest('/api/config', { method: 'POST', body: patch });
@@ -3144,7 +3229,7 @@
       setResult(el.settingsResult, 'error', invalid);
       return false;
     }
-    setBusy(el.settingsSave, true, '保存中…');
+    setBusy(el.settingsSave, true, '正在保存');
     try {
       const data = await apiRequest('/api/config', { method: 'POST', body: patch });
       configCache = data || {};
@@ -3164,8 +3249,8 @@
   }
 
   async function testConnection(button, resultNode) {
-    setBusy(button, true, '测试中…');
-    setResult(resultNode, 'loading', '正在连接模型…');
+    setBusy(button, true, '正在试连接');
+    setResult(resultNode, 'loading', '正在确认模型是否可用。');
     try {
       const data = await apiRequest('/api/config/test', { method: 'POST' });
       if (data && data.ok) {
@@ -3359,7 +3444,7 @@
       return;
     }
     const category = (el.memoryAddCategory && el.memoryAddCategory.value) || 'other';
-    setBusy(el.memoryAddBtn, true, '添加中…');
+    setBusy(el.memoryAddBtn, true, '正在添加');
     try {
       await apiRequest('/api/memory', { method: 'POST', body: { text: text, category: category } });
       if (el.memoryAddText) el.memoryAddText.value = '';
@@ -3605,14 +3690,19 @@
   function init() {
     initDesktopShell(); // 先判定是否运行在 Tauri 里，再渲染其余界面
 
-    // 无障碍：消息列表不再整体 aria-live（流式重渲染会反复播报），
-    // 改由 #sr-live 在「一条回复完成」时播报一次（见 announceMessage）。
-    el.messages.removeAttribute('aria-live');
-    if (el.messages.getAttribute('role') === 'log') el.messages.removeAttribute('role');
+    // 无障碍分工：
+    // - #messages[role="log"]：对话正文；流式期间 aria-busy=true，结束后一次性播报。
+    // - #sr-live[role="status"]：只播报离散状态（已复制 / 已回到最新），不播报流式正文。
+    el.messages.setAttribute('role', 'log');
+    el.messages.setAttribute('aria-live', 'polite');
+    el.messages.setAttribute('aria-relevant', 'additions text');
+    if (!el.messages.getAttribute('aria-label')) el.messages.setAttribute('aria-label', '对话记录');
+    if (!el.messages.hasAttribute('aria-busy')) el.messages.setAttribute('aria-busy', 'false');
     if (!el.srLive) { // 契约缺失时兜底创建一个视觉隐藏的 live 区
       el.srLive = document.createElement('div');
       el.srLive.id = 'sr-live';
       el.srLive.className = 'sr-only';
+      el.srLive.setAttribute('role', 'status');
       el.srLive.setAttribute('aria-live', 'polite');
       if (el.messages.parentNode) el.messages.parentNode.insertBefore(el.srLive, el.messages.nextSibling);
     }
@@ -3621,6 +3711,8 @@
     loadState();
     ensureActive();
     bindEvents();
+    initBottomObserver();
+    setMessagesBusy(false);
     syncSidebarHidden();  // 窄屏初始为隐藏：inert 隔离
     syncLayerAria();
 

@@ -125,6 +125,13 @@
   --sp-6: 32px;
   --sp-7: 40px;
 
+  /* 字体：Windows 自带中文 UI 字体排在前面；PingFang SC（Apple）仅作末尾兜底 */
+  --font-ui: system-ui, "Segoe UI Variable Text", "Segoe UI",
+    "Microsoft YaHei UI", "Microsoft YaHei",
+    "HarmonyOS Sans SC", "MiSans", "Source Han Sans SC",
+    "Noto Sans CJK SC", "PingFang SC", sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
+
   /* 字号阶梯：12 / 13 / 15 / 17 / 22 / 28 */
   --fs-xs: 12px;
   --fs-sm: 13px;
@@ -135,15 +142,18 @@
   --fs-2xl: 28px;
   --fs-3xl: 32px;
 
-  /* 动效 */
-  --dur-fast: 150ms;
-  --dur: 200ms;
-  --dur-slow: 250ms;
-  --dur-enter: 280ms;
-  --dur-theme: 240ms;
-  --ease: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  /* 轻微回弹的 spring 手感（仅用于 transform / opacity） */
+  /* 动效：时长收拢为固定档位（高频交互一律 ≤150ms） */
+  --dur-fast: 100ms;  /* 高频微反馈：悬停 / 按下 */
+  --dur: 150ms;       /* 默认：颜色 / 边框 / 透明度过渡 */
+  --dur-mid: 200ms;   /* 退场 / 小幅位移 */
+  --dur-slow: 250ms;  /* 入场 */
+  --dur-enter: 300ms; /* 弹窗 / 侧栏大幅入场 */
+  --dur-theme: 200ms; /* 主题切换：只过渡颜色类属性 */
+  /* 曲线：Material 3 Standard 家族（Emphasized 在 Web/CSS 上是 N/A，不采用） */
+  --ease: cubic-bezier(0.2, 0, 0, 1);     /* standard —— Web 端首选 */
+  --ease-out: cubic-bezier(0, 0, 0, 1);   /* standard decelerate —— 入场 */
+  --ease-in: cubic-bezier(0.3, 0, 1, 1);  /* standard accelerate —— 退场 */
+  /* 轻微回弹：只允许用于「按下」这类微反馈 */
   --ease-spring: cubic-bezier(0.2, 1.16, 0.32, 1);
 
   /* 尺寸 */
@@ -245,11 +255,9 @@ body {
   margin: 0;
   height: 100dvh;
   overflow: hidden; /* 页面本身不滚动，只有聊天区滚动 */
-  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB",
-    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-    sans-serif;
+  font-family: var(--font-ui);
   font-size: var(--fs-base);
-  line-height: 1.7;
+  line-height: 1.6;
   color: var(--text);
   background: var(--bg);
   font-variant-numeric: tabular-nums;
@@ -287,10 +295,11 @@ a:hover {
   color: var(--text);
 }
 
-/* 全局焦点环 */
+/* 全局焦点环（2.4.7 Focus Visible）：border-radius: inherit 避免与圆角冲突 */
 :focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
+  border-radius: inherit;
 }
 
 /* =======================================================================
@@ -680,8 +689,8 @@ svg.icon {
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   margin-right: var(--sp-1);
   border: 0;
   border-radius: var(--r-sm);
@@ -714,11 +723,12 @@ svg.icon {
 
 .sessions__empty {
   margin: 0;
-  padding: var(--sp-3);
+  padding: var(--sp-4) var(--sp-3);
   border: 1px dashed var(--border-strong);
-  border-radius: var(--r);
-  color: var(--text-faint);
+  border-radius: var(--r-md);
+  color: var(--text-muted);
   font-size: var(--fs-sm);
+  line-height: 1.6;
   text-align: center;
 }
 
@@ -878,7 +888,19 @@ svg.icon {
   padding: var(--sp-5) var(--sp-5) var(--sp-2);
   scroll-behavior: smooth;
   overscroll-behavior: contain;
+  /* C8：长会话滚动性能。content = layout + paint + style。
+     实测（Edge headless 截图像素 diff，1100px 与 700px 两种宽度）：
+     .chat 的 contain: content 与 contain: none 的像素差为 0，说明气泡 /
+     头像阴影没有被裁掉，可以放心保留。 */
+  contain: content;
 }
+
+/* C12 长会话滚动性能 —— 实测后决定「不加」content-visibility：在 .msg 上用
+   content-visibility: auto（无论是否额外覆盖 contain: layout style）都会带来
+   paint containment，把 .msg--user 气泡的 box-shadow: 0 8px 20px var(--glow-brand)
+   与头像光晕裁掉（实测同一像素点由 rgb(221,229,244) 变成背景 rgb(236,239,244)，
+   两张截图相差约 3.3 万像素）。按「有问题就去掉」处理，这里只保留 .chat 的
+   contain: content。若后续要用，必须先给 .msg 留出阴影空间，否则会掉阴影。 */
 
 .messages {
   width: 100%;
@@ -933,7 +955,7 @@ svg.icon {
   max-width: 44ch;
   color: var(--text-soft);
   font-size: var(--fs-md);
-  line-height: 1.75;
+  line-height: 1.6;
 }
 
 .suggestions {
@@ -986,7 +1008,7 @@ svg.icon {
   background: var(--warn-bg);
   color: var(--text-muted);
   font-size: var(--fs-xs);
-  line-height: 1.75;
+  line-height: 1.6;
   text-align: left;
 }
 
@@ -997,7 +1019,7 @@ svg.icon {
   display: flex;
   gap: var(--sp-3);
   max-width: 100%;
-  animation: rise-in var(--dur-slow) var(--ease-out) both;
+  animation: rise-in 180ms var(--ease-out) both; /* 消息入场 180ms（C3），实时由 .is-enter 驱动 */
 }
 
 /* 助手：左对齐 */
@@ -1049,7 +1071,10 @@ svg.icon {
   padding: 11px var(--sp-4);
   border-radius: var(--r-lg);
   font-size: var(--fs-base);
-  line-height: 1.72;
+  line-height: 1.6;
+  /* C8：流式气泡先预留首行高度（border-box 下含 padding，
+     实际生效的是下面 .msg--typing .msg__bubble 的 calc(1.6em + 22px)） */
+  min-block-size: 1.6em;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -1072,6 +1097,9 @@ svg.icon {
 /* 正文：保留换行，兼容 markdown 渲染结果 */
 .msg__content {
   white-space: pre-wrap;
+  /* C4 / WCAG 2.2 SC 1.4.8 + clreq：CJK 正文一行 ≤40 字形；16px ≈ 640px。
+     用 px 而不用 ch —— ch 在 CJK 字体下按 "0" 宽度算，会明显偏小。 */
+  max-inline-size: 640px;
 }
 
 .msg__content > *:first-child {
@@ -1120,8 +1148,7 @@ svg.icon {
   border-radius: var(--r-xs);
   background: var(--surface-3);
   color: var(--text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New",
-    monospace;
+  font-family: var(--font-mono);
   font-size: 0.88em;
 }
 
@@ -1226,7 +1253,7 @@ svg.icon {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 6px;
+  padding: 9px 10px; /* 2.5.8：指针目标 ≥32px，用 padding 扩张，不动图标 */
   border: 0;
   border-radius: var(--r-xs);
   background: none;
@@ -1278,7 +1305,12 @@ svg.icon {
 
 /* 打字中：三个跳动的小圆点 */
 .msg--typing .msg__bubble {
-  padding: var(--sp-3) var(--sp-4);
+  /* 与正文气泡同一套 padding，方便和「一行正文」等高 */
+  padding: 11px var(--sp-4);
+  /* C8：全局是 border-box，1.6em 会被上下 padding 吃掉，
+     所以按「一行正文 1.6em + 上下 padding 22px」预留：
+     三个点的气泡与一行正文一样是 46px，首 token 到达时不整页跳。 */
+  min-block-size: calc(1.6em + 22px);
 }
 
 .dots {
@@ -1309,6 +1341,9 @@ svg.icon {
   align-items: center;
   gap: 5px;
   padding: 2px 0;
+  /* inline-flex 默认按基线对齐，行盒会多出 2px；
+     改成居中对齐后，行盒严格等于 line-height，气泡高度可预测 */
+  vertical-align: middle;
 }
 
 /* 流式输出光标 */
@@ -1436,8 +1471,7 @@ kbd {
   border-radius: 5px;
   background: var(--surface-2);
   color: var(--text-soft);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New",
-    monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.5;
 }
@@ -1505,7 +1539,8 @@ dialog.modal {
 dialog.modal[open] {
   display: flex;
   flex-direction: column;
-  animation: modal-in var(--dur-slow) var(--ease-out) both;
+  /* 弹窗大幅入场：300ms + decelerate（退场见 17.10） */
+  animation: modal-in var(--dur-enter) var(--ease-out) both;
 }
 
 dialog.modal::backdrop {
@@ -1536,7 +1571,7 @@ dialog.modal::backdrop {
   padding: var(--sp-5) var(--sp-5) var(--sp-6);
   color: var(--text-soft);
   font-size: var(--fs-md);
-  line-height: 1.8;
+  line-height: 1.6;
 }
 
 .modal__body p {
@@ -1624,7 +1659,7 @@ dialog.modal::backdrop {
   background: var(--surface);
   color: var(--text);
   font-size: var(--fs-sm);
-  line-height: 1.65;
+  line-height: 1.6;
   box-shadow: var(--sh-lg);
   pointer-events: auto;
   animation: toast-in var(--dur-slow) var(--ease-out) both;
@@ -1632,7 +1667,8 @@ dialog.modal::backdrop {
 
 .toast.is-leaving,
 .toast--leaving {
-  animation: toast-out var(--dur) var(--ease) both;
+  /* 退场：200ms + accelerate */
+  animation: toast-out var(--dur-mid) var(--ease-in) both;
 }
 
 .toast--error {
@@ -1657,7 +1693,7 @@ dialog.modal::backdrop {
   padding: 11px var(--sp-4);
   border-radius: var(--r-lg);
   font-size: var(--fs-base);
-  line-height: 1.72;
+  line-height: 1.6;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -1732,7 +1768,7 @@ dialog.modal::backdrop {
     width: min(300px, 86vw);
     flex-basis: auto;
     transform: translateX(-100%);
-    transition: transform var(--dur-slow) var(--ease-out);
+    transition: transform var(--dur-enter) var(--ease-out); /* 入场 300ms */
     box-shadow: var(--sh-lg);
   }
 
@@ -1740,11 +1776,16 @@ dialog.modal::backdrop {
     transform: translateX(0);
   }
 
+  /* 抽屉退场：200ms + accelerate（只作用于收起方向，入场仍走上面 300ms） */
+  #app:not(.is-sidebar-open) .sidebar {
+    transition: transform var(--dur-mid) var(--ease-in);
+  }
+
   /* 抽屉打开时显示遮罩（半透明 + 模糊）。
      同时兼容 JS 未移除 hidden 的情况 */
   #app.is-sidebar-open ~ .scrim {
     display: block !important;
-    animation: scrim-in var(--dur-slow) var(--ease) both;
+    animation: scrim-in var(--dur-enter) var(--ease-out) both;
   }
 
   .topbar__menu,
@@ -1913,30 +1954,9 @@ dialog.modal::backdrop {
   }
 }
 
-/* 尊重系统减少动效偏好 */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-    scroll-behavior: auto !important;
-  }
-
-  .msg,
-  .welcome__inner,
-  .scroll-bottom,
-  dialog.modal[open],
-  .toast {
-    animation: none;
-  }
-}
-
 /* 生成中：发送键切换为「停止生成」（由 app.js 添加 .is-stop） */
 .send-btn.is-stop { background: var(--error); border-color: var(--error); color: #fff; }
 .send-btn.is-stop:hover:not(:disabled) { filter: brightness(1.08); }
-
 
 /* =======================================================================
    16. 开箱向导 / 设置抽屉 / 记忆面板 / 调试与拟人化（本次新增）
@@ -1988,7 +2008,7 @@ dialog.modal::backdrop {
   margin: 0;
   color: var(--text-muted);
   font-size: var(--fs-xs);
-  line-height: 1.7;
+  line-height: 1.6;
 }
 
 .field__row { display: flex; align-items: center; gap: var(--sp-2); }
@@ -2075,7 +2095,7 @@ select.input { padding-right: var(--sp-2); cursor: pointer; }
   color: var(--text-soft);
   font-size: var(--fs-xs);
   font-weight: 400;
-  line-height: 1.7;
+  line-height: 1.6;
 }
 
 .switch__text strong { color: var(--text); font-size: var(--fs-sm); font-weight: 600; }
@@ -2096,7 +2116,7 @@ select.input { padding-right: var(--sp-2); cursor: pointer; }
   background: var(--surface-2);
   color: var(--text-soft);
   font-size: var(--fs-sm);
-  line-height: 1.7;
+  line-height: 1.6;
 }
 
 .form-result[data-state="ok"] { border-color: var(--ok-border); background: var(--ok-bg); color: var(--ok); }
@@ -2139,7 +2159,7 @@ select.input { padding-right: var(--sp-2); cursor: pointer; }
   background: var(--scrim);
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
-  animation: scrim-in var(--dur) var(--ease) both;
+  animation: scrim-in var(--dur-enter) var(--ease-out) both;
 }
 
 .drawer {
@@ -2154,7 +2174,7 @@ select.input { padding-right: var(--sp-2); cursor: pointer; }
   border-left: 1px solid var(--border);
   background: var(--surface);
   box-shadow: var(--sh-lg);
-  animation: drawer-in var(--dur-slow) var(--ease-out) both;
+  animation: drawer-in var(--dur-enter) var(--ease-out) both;
 }
 
 .drawer__head {
@@ -2209,7 +2229,7 @@ select.input { padding-right: var(--sp-2); cursor: pointer; }
   background: var(--scrim);
   -webkit-backdrop-filter: blur(7px);
   backdrop-filter: blur(7px);
-  animation: scrim-in var(--dur-slow) var(--ease) both;
+  animation: scrim-in var(--dur-enter) var(--ease-out) both;
 }
 
 .wizard__card {
@@ -2223,7 +2243,7 @@ select.input { padding-right: var(--sp-2); cursor: pointer; }
   border-radius: var(--r-xl);
   background: var(--surface);
   box-shadow: var(--sh-lg);
-  animation: modal-in var(--dur-slow) var(--ease-out) both;
+  animation: modal-in var(--dur-enter) var(--ease-out) both;
 }
 
 .wizard__head {
@@ -2283,7 +2303,7 @@ select.input { padding-right: var(--sp-2); cursor: pointer; }
   color: var(--text);
   font-size: var(--fs-xl);
   font-weight: 700;
-  line-height: 1.4;
+  line-height: 1.35;
 }
 
 .wizard__p {
@@ -2389,7 +2409,7 @@ select.input { padding-right: var(--sp-2); cursor: pointer; }
   margin: 0 0 var(--sp-2);
   color: var(--text-soft);
   font-size: var(--fs-md);
-  line-height: 1.8;
+  line-height: 1.6;
 }
 
 .steps__main p:last-child { margin-bottom: 0; }
@@ -2399,7 +2419,7 @@ select.input { padding-right: var(--sp-2); cursor: pointer; }
   border: 1px solid var(--border);
   border-radius: var(--r-xs);
   background: var(--surface-3);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
+  font-family: var(--font-mono);
   font-size: 0.88em;
 }
 
@@ -2456,7 +2476,7 @@ select.input { padding-right: var(--sp-2); cursor: pointer; }
   border-radius: var(--r-md);
   color: var(--text-muted);
   font-size: var(--fs-sm);
-  line-height: 1.8;
+  line-height: 1.6;
   text-align: center;
 }
 
@@ -2511,7 +2531,7 @@ select.input { padding-right: var(--sp-2); cursor: pointer; }
 
 .mem-item__actions { display: flex; align-items: center; gap: 2px; flex: none; }
 
-.mem-item__actions .icon-btn { width: 30px; height: 30px; font-size: 15px; }
+.mem-item__actions .icon-btn { width: 32px; height: 32px; font-size: 15px; }
 
 .mem-item__actions .icon-btn.is-on { color: var(--warn); background: var(--warn-bg); }
 
@@ -2547,7 +2567,7 @@ select.input { padding-right: var(--sp-2); cursor: pointer; }
   max-width: 100%;
 }
 
-.msg__bubble.is-seq { animation: rise-in 320ms var(--ease-out) both; }
+.msg__bubble.is-seq { animation: rise-in 180ms var(--ease-out) both; }
 
 .msg__note {
   max-width: 100%;
@@ -2590,7 +2610,7 @@ select.input { padding-right: var(--sp-2); cursor: pointer; }
   border-radius: var(--r-xs);
   background: var(--surface);
   color: var(--text-soft);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.65;
   white-space: pre;
@@ -2651,18 +2671,6 @@ select.input { padding-right: var(--sp-2); cursor: pointer; }
 
 @media (max-width: 480px) {
   #status-pill { display: none; }
-}
-
-/* 尊重减少动效偏好：新组件同样不播放动画 */
-@media (prefers-reduced-motion: reduce) {
-  .msg__bubble.is-seq,
-  .wizard__step.is-active,
-  .wizard__card,
-  .drawer,
-  .drawer-scrim,
-  .wizard__backdrop {
-    animation: none;
-  }
 }
 
 .drawer__extra {
@@ -2764,8 +2772,8 @@ html.is-tauri .titlebar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 26px;
+  width: 40px;
+  height: 32px;
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
@@ -2937,7 +2945,7 @@ dialog.modal,
   box-shadow: 0 0 0 3px var(--focus), var(--glass-ring);
 }
 
-/* ── 17.4 深浅色切换：平滑过渡，不闪白（≤250ms）─────────────────── */
+/* ── 17.4 深浅色切换：只过渡颜色类属性，200ms（--dur-theme）─────────── */
 html {
   transition: background-color var(--dur-theme) var(--ease);
 }
@@ -2965,23 +2973,26 @@ body {
 }
 
 .msg.is-enter {
-  animation: msg-in var(--dur-enter) var(--ease-spring) both;
+  /* C3：新到达的消息 180ms + decelerate；阶梯 ≤40ms 由 JS 写入的 --i 驱动
+     （历史消息批量渲染时不写 --i，所以不会逐条 delay） */
+  animation: msg-in 180ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 40ms);
 }
 
 .msg.is-enter .msg__avatar {
-  animation: bubble-in 300ms var(--ease-spring) both;
+  animation: bubble-in 180ms var(--ease-out) both;
 }
 
 .msg__bubble {
-  line-height: 1.75;
+  line-height: 1.6;
 }
 
 .msg__bubble.is-seq {
-  animation: bubble-in 300ms var(--ease-spring) both; /* 分气泡依次出现 */
+  animation: bubble-in 180ms var(--ease-out) both; /* 分气泡依次出现 */
 }
 
 .msg__bubble.is-waiting-hint {
-  animation: fade-in 220ms var(--ease-out) both;
+  animation: fade-in var(--dur-mid) var(--ease-out) both;
 }
 
 @keyframes msg-in {
@@ -3073,7 +3084,7 @@ body {
 }
 
 .send-btn.is-pulse:not(:disabled) {
-  animation: send-pop 240ms var(--ease-spring);
+  animation: send-pop var(--dur-fast) var(--ease-spring); /* 按下回弹：spring 仅存于此 */
 }
 
 @keyframes send-pop {
@@ -3118,7 +3129,7 @@ body {
   animation: none;
   box-shadow: var(--sh-md), var(--glass-top);
   transition: opacity var(--dur) var(--ease-out),
-    transform var(--dur) var(--ease-spring), box-shadow var(--dur) var(--ease),
+    transform var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease),
     border-color var(--dur) var(--ease), color var(--dur) var(--ease);
 }
 
@@ -3140,13 +3151,13 @@ body {
 .session-item {
   overflow: hidden;
   max-height: 88px;
-  transition: background-color var(--dur) var(--ease), transform 220ms var(--ease-out),
-    box-shadow var(--dur) var(--ease), max-height 220ms var(--ease-out),
-    opacity 180ms var(--ease);
+  transition: background-color var(--dur) var(--ease), transform var(--dur-mid) var(--ease-out),
+    box-shadow var(--dur) var(--ease), max-height var(--dur-mid) var(--ease-out),
+    opacity var(--dur) var(--ease);
 }
 
 .session-item.is-entering {
-  animation: session-in 220ms var(--ease-out) both;
+  animation: session-in var(--dur-mid) var(--ease-out) both;
 }
 
 .session-item.is-leaving {
@@ -3174,7 +3185,9 @@ body {
   animation: none;
   opacity: 0;
   transform: translate3d(26px, 0, 0) scale(0.995);
-  transition: opacity var(--dur) var(--ease), transform var(--dur-slow) var(--ease-out);
+  /* C3：抽屉入场 300ms + decelerate；退场 200ms + accelerate（见 .is-closing） */
+  transition: opacity var(--dur-enter) var(--ease-out),
+    transform var(--dur-enter) var(--ease-out);
 }
 
 .drawer.is-open {
@@ -3185,12 +3198,14 @@ body {
 .drawer.is-closing {
   opacity: 0;
   transform: translate3d(18px, 0, 0) scale(0.995);
+  transition: opacity var(--dur-mid) var(--ease-in),
+    transform var(--dur-mid) var(--ease-in);
 }
 
 .drawer-scrim {
   animation: none;
   opacity: 0;
-  transition: opacity var(--dur) var(--ease);
+  transition: opacity var(--dur-mid) var(--ease-out);
 }
 
 .drawer-scrim.is-open {
@@ -3199,11 +3214,12 @@ body {
 
 .drawer-scrim.is-closing {
   opacity: 0;
+  transition: opacity var(--dur-mid) var(--ease-in);
 }
 
 .wizard {
   opacity: 0;
-  transition: opacity var(--dur) var(--ease);
+  transition: opacity var(--dur-enter) var(--ease-out);
 }
 
 .wizard.is-open {
@@ -3218,7 +3234,8 @@ body {
   animation: none;
   opacity: 0;
   transform: translate3d(0, 14px, 0) scale(0.975);
-  transition: opacity var(--dur) var(--ease-out), transform 300ms var(--ease-spring);
+  transition: opacity var(--dur-enter) var(--ease-out),
+    transform var(--dur-enter) var(--ease-out);
 }
 
 .wizard.is-open .wizard__card {
@@ -3235,7 +3252,9 @@ body {
 dialog.modal {
   opacity: 0;
   transform: translate3d(0, 12px, 0) scale(0.975);
-  transition: opacity var(--dur) var(--ease-out), transform 260ms var(--ease-spring);
+  /* C3：弹窗入场 300ms + decelerate */
+  transition: opacity var(--dur-enter) var(--ease-out),
+    transform var(--dur-enter) var(--ease-out);
 }
 
 dialog.modal[open] {
@@ -3250,10 +3269,13 @@ dialog.modal[open].is-open {
 dialog.modal[open].is-closing {
   opacity: 0;
   transform: translate3d(0, 8px, 0) scale(0.985);
+  /* C3：退场 200ms + accelerate */
+  transition: opacity var(--dur-mid) var(--ease-in),
+    transform var(--dur-mid) var(--ease-in);
 }
 
 dialog.modal.is-closing::backdrop {
-  animation: scrim-out 180ms var(--ease) both;
+  animation: scrim-out var(--dur-mid) var(--ease-in) both;
 }
 
 @keyframes scrim-out {
@@ -3267,7 +3289,7 @@ dialog.modal.is-closing::backdrop {
 
 /* ── 17.11 空状态建议胶囊：上浮 + 渐变描边 + 依次淡入 ────────────── */
 .suggestions .suggestion {
-  animation: chip-in 320ms var(--ease-out) both;
+  animation: chip-in var(--dur-slow) var(--ease-out) both;
 }
 
 .suggestions .suggestion:nth-child(1) {
@@ -3332,13 +3354,13 @@ dialog.modal.is-closing::backdrop {
   content: "已复制";
   font-size: var(--fs-xs);
   font-weight: 600;
-  animation: fade-in 200ms var(--ease-out) both;
+  animation: fade-in var(--dur-mid) var(--ease-out) both;
 }
 
 /* ── 17.13 错误 Toast 轻微抖动 ───────────────────────────────────── */
 .toast--error {
   animation: toast-in var(--dur-slow) var(--ease-out) both,
-    toast-shake 340ms var(--ease) 120ms both;
+    toast-shake var(--dur-slow) var(--ease) 120ms both;
 }
 
 @keyframes toast-shake {
@@ -3440,43 +3462,6 @@ dialog.modal.is-closing::backdrop {
 @media (max-width: 420px) {
   .titlebar__name {
     display: none;
-  }
-}
-
-/* ── 17.16 无障碍：完整尊重「减少动效」偏好（放最后确保覆盖）──── */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.001ms !important;
-    animation-delay: 0ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-    scroll-behavior: auto !important;
-  }
-
-  .msg,
-  .msg.is-enter,
-  .msg.is-enter .msg__avatar,
-  .msg__bubble.is-seq,
-  .msg__bubble.is-waiting-hint,
-  .scroll-bottom,
-  .session-item.is-entering,
-  .suggestions .suggestion,
-  .toast,
-  .toast--error,
-  .drawer,
-  .drawer-scrim,
-  .wizard__card,
-  .wizard__backdrop,
-  dialog.modal[open],
-  .dots > * {
-    animation: none !important;
-  }
-
-  .scroll-bottom {
-    opacity: 1;
-    transform: none;
   }
 }
 
@@ -3610,7 +3595,7 @@ body::after {
   height: 84px;
   margin-bottom: var(--sp-1);
   isolation: isolate;
-  animation: hero-mark-in 680ms var(--ease-spring) backwards;
+  animation: hero-mark-in 680ms var(--ease-out) backwards; /* 一次性长编排：只换曲线 */
 }
 
 /* 两层之间的光晕扩散：极淡径向光，随呼吸略微起伏 */
@@ -3677,7 +3662,7 @@ body::after {
   color: var(--text);
   font-size: clamp(26px, 4.1vw, 30px);
   font-weight: 600;
-  line-height: 1.42;
+  line-height: 1.35;
   letter-spacing: 0.02em;
   text-wrap: balance;
   animation: rise-soft 640ms var(--ease-out) 80ms backwards;
@@ -3688,7 +3673,7 @@ body::after {
   max-width: 42ch;
   color: var(--text-faint);
   font-size: var(--fs-md);
-  line-height: 1.75;
+  line-height: 1.6;
   letter-spacing: 0.01em;
   animation: rise-soft 640ms var(--ease-out) 160ms backwards;
 }
@@ -3958,9 +3943,9 @@ dialog.modal,
 
 /* ── 18.6 排版精修：字号阶梯、字距、行高、数字 ─────────────────────────── */
 
-/* 中文正文行高 1.75；数字等宽，数值变化不抖动 */
+/* 中文正文行高 1.6（clreq：行间距 50%–100% 字高）；数字等宽，数值变化不抖动 */
 body {
-  line-height: 1.75;
+  line-height: 1.6;
 }
 
 /* 中文标题保持一点点正字距（负字距对中文会显挤） */
@@ -3979,16 +3964,24 @@ body {
   letter-spacing: 0.04em;
 }
 
-/* 数值类元素：tabular-nums 明确继承来源，避免子元素覆盖 */
+/* 数值类元素（C8b）：tabular-nums 明确写出来，避免子元素覆盖；
+   时间戳 / 会话数 / 记忆条数 / token 数在流式过程中宽度不跳 */
 .msg__meta,
+.msg__used,
+.msg__note,
 .pill,
+.sidebar__meta,
 .mem-head,
+.mem-empty,
 .field__value,
-.dbg {
+.form-result,
+.dbg,
+#memory-count,
+#memory-updated {
   font-variant-numeric: tabular-nums;
 }
 
-/* 正文段落保持 1.75，长文更松弛 */
+/* 正文段落统一 1.6；中文标题统一 1.35（不要再出现 1.8 / 1.85 这类跳档） */
 .msg__content,
 .msg__bubble,
 .wizard__p,
@@ -3997,7 +3990,20 @@ body {
 .steps__main p,
 .mem-item__text,
 .note {
-  line-height: 1.75;
+  line-height: 1.6;
+}
+
+/* 中文标题行高统一 1.35 */
+.welcome__title,
+.hero__title,
+.wizard__h,
+.drawer__head h2,
+.modal__head h2,
+.topbar__title h1,
+.msg__content h1,
+.msg__content h2,
+.msg__content h3 {
+  line-height: 1.35;
 }
 
 /* ── 18.7 交互三态与双层焦点环 ─────────────────────────────────────────── */
@@ -4207,58 +4213,7 @@ html[data-theme="dark"] ::selection {
   }
 }
 
-/* ── 18.11 无障碍：完整尊重「减少动效」偏好 ────────────────────────────── */
-
-@media (prefers-reduced-motion: reduce) {
-  /* 光晕漂移、旋转、呼吸、stagger 全部停止 */
-  body::before,
-  .bg-aurora,
-  .hero__mark,
-  .hero__mark::before,
-  .hero__ring,
-  .hero__title,
-  .hero__sub,
-  .recall,
-  .recall__chip,
-  .recall__list > li,
-  .starters__label,
-  .suggestions .suggestion,
-  .welcome__notice {
-    animation: none !important;
-    transition: none !important;
-  }
-
-  /* 静态层回到中性状态：内容一律可见、不位移 */
-  body::before,
-  .bg-aurora {
-    transform: none !important;
-  }
-
-  .hero__mark,
-  .hero__title,
-  .hero__sub,
-  .recall,
-  .recall__chip,
-  .starters__label,
-  .suggestions .suggestion,
-  .welcome__notice {
-    opacity: 1 !important;
-    transform: none !important;
-  }
-
-  .hero__ring {
-    opacity: 0.55;
-    scale: 1 !important;
-  }
-
-  /* 消息操作按钮：无 hover 动画时保持可见，避免「找不到按钮」 */
-  .msg__action {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-
+/* ── 18.11 无障碍：减少动效偏好（原块已合并到文件末尾唯一一处 reduce 块）─── */
 
 /* =======================================================================
    18.12 记忆透明度 · 键盘快捷键 · 无障碍工具类
@@ -4290,7 +4245,7 @@ html[data-theme="dark"] ::selection {
   padding: 0 var(--sp-1);
   color: var(--text-faint);
   font-size: 11px;
-  line-height: 1.7;
+  line-height: 1.6;
   opacity: 0.9; /* 默认就已经很轻；hover / 聚焦时再加深，不喧宾夺主 */
   transition: opacity var(--dur) var(--ease), color var(--dur) var(--ease);
 }
@@ -4391,10 +4346,138 @@ html[data-theme="dark"] ::selection {
   text-align: right;
 }
 
-/* ── 无障碍：新元素同样尊重「减少动效」 ─────────────────────────────── */
+
+/* ── 17.2b 系统原生标题栏模式（app.js 给 <html> 挂 .is-tauri-native）─────
+   现役 app.js 的 initDesktopShell() 已改用系统原生标题栏，自绘标题栏只保留
+   在 DOM 里、不再显示。所以这里把 17.2 为自绘标题栏预留的 38px 顶部位移取消。
+   放在文件末尾（其它 is-tauri 规则之后）是为了靠源码顺序覆盖它们；
+   浏览器模式下不会挂这个 class，因此这些规则完全不生效。 */
+html.is-tauri-native .titlebar {
+  display: none;
+}
+
+html.is-tauri-native body {
+  padding-top: 0;
+}
+
+html.is-tauri-native .app,
+html.is-tauri-native .main {
+  height: 100dvh;
+}
+
+/* 固定浮层 / 移动端抽屉不再需要避开标题栏 */
+html.is-tauri-native .scrim,
+html.is-tauri-native .drawer-scrim,
+html.is-tauri-native .wizard,
+html.is-tauri-native .drawer,
+html.is-tauri-native .sidebar {
+  top: 0;
+}
+
+html.is-tauri-native .wizard__card {
+  height: auto;
+  max-height: min(88dvh, 780px);
+}
+
+/* =======================================================================
+   无障碍：prefers-reduced-motion: reduce —— 全文件唯一一处
+   （原 5 处分散的 reduce 块合并到这里；原来各块里逐条关闭的动画一条不丢，
+     另外把基础重置 + animation-delay:0 合并进同一个选择器块）
+   ======================================================================= */
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* 原 5 个块里被逐条关闭的动画（含无限循环的呼吸 / 漂移 / 跳动） */
+  .msg,
+  .msg.is-enter,
+  .msg.is-enter .msg__avatar,
+  .msg__bubble.is-seq,
+  .msg__bubble.is-waiting-hint,
+  .welcome__inner,
+  .scroll-bottom,
+  .session-item.is-entering,
+  .suggestions .suggestion,
+  .toast,
+  .toast--error,
+  .drawer,
+  .drawer-scrim,
+  .wizard__step.is-active,
+  .wizard__card,
+  .wizard__backdrop,
+  dialog.modal[open],
+  .dots > *,
+  .dot[data-state="loading"],
+  .pill[data-state="loading"]::before,
+  body::before,
+  .bg-aurora,
+  .hero__mark,
+  .hero__mark::before,
+  .hero__ring,
+  .hero__title,
+  .hero__sub,
+  .recall,
+  .recall__chip,
+  .recall__list > li,
+  .starters__label,
+  .welcome__notice {
+    animation: none !important;
+  }
+
+  /* 静态层回到中性状态：内容一律可见、不位移 */
+  .scroll-bottom {
+    opacity: 1;
+    transform: none;
+  }
+
+  body::before,
+  .bg-aurora {
+    transform: none !important;
+  }
+
+  .hero__mark,
+  .hero__title,
+  .hero__sub,
+  .recall,
+  .recall__chip,
+  .starters__label,
+  .suggestions .suggestion,
+  .welcome__notice {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .hero__mark,
+  .hero__mark::before,
+  .hero__ring,
+  .hero__title,
+  .hero__sub,
+  .recall,
+  .recall__chip,
+  .recall__list > li,
+  .starters__label,
+  .suggestions .suggestion,
+  .welcome__notice,
   .msg__used,
   .msg__used-item {
     transition: none !important;
+  }
+
+  .hero__ring {
+    opacity: 0.55;
+    scale: 1 !important;
+  }
+
+  /* 消息操作按钮：无 hover 动画时保持可见，避免「找不到按钮」 */
+  .msg__action {
+    opacity: 1;
+    transform: none;
   }
 }

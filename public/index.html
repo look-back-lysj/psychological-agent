@@ -128,8 +128,8 @@
       </header>
 
       <section class="chat" id="chat" aria-label="对话内容">
-        <div class="messages" id="messages"></div>
-        <div id="sr-live" class="sr-only" aria-live="polite"></div>
+        <div class="messages" id="messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="对话记录" aria-busy="false"></div>
+        <div id="sr-live" class="sr-only" role="status" aria-live="polite"></div>
 
         <div class="welcome" id="welcome">
           <div class="welcome__inner">
@@ -155,6 +155,8 @@
             <p class="welcome__notice">我不是心理咨询师，也不能在危机时提供专业支持。如有紧急情况，请立即联系身边可信任的人、学校心理中心或当地紧急服务。</p>
           </div>
         </div>
+
+        <div id="messages-end" aria-hidden="true"></div>
 
         <button class="scroll-bottom" id="scroll-bottom" type="button" aria-label="回到最新消息" hidden>
           <svg class="icon"><use href="#i-arrow-down" /></svg>
