@@ -48,7 +48,9 @@ const SETUP_NAME = `shouanren-${VERSION}-x64-setup.exe`;
 // 便携版自带后端可执行文件，**不需要本机装 Node.js**，解压双击即用。
 // （早先叫 "-node.zip" 且指向 dist/守岸人/，但那个目录里是 pkg 打好的 56MB exe，
 //   既不需要 Node、又白白多 10MB 的 docs/devlog/tests，说明与内容自相矛盾。）
-const ZIP_NAME = `shouanren-${VERSION}-portable.zip`;
+// 注意：Gitee 的下载 CDN 按「路径」缓存，同名的附件即使删掉重传，URL 仍会返回旧内容。
+// 所以这里的产物名带上平台标识；一旦需要重传内容，请改这个后缀（例如 -win-x64-portable-r2）。
+const ZIP_NAME = `shouanren-${VERSION}-win-x64-portable.zip`;
 const ZIP_PATH = path.join(ROOT, 'dist', ZIP_NAME);
 const PORTABLE_DIR = path.join(ROOT, 'dist', '守岸人桌面版');
 
@@ -58,6 +60,15 @@ function fail(msg) { console.error('❌ ' + msg); process.exit(1); }
 function makeZip() {
   if (!fs.existsSync(PORTABLE_DIR)) {
     fail('找不到 ' + PORTABLE_DIR + '，请先运行：node scripts/build-desktop.js');
+  }
+  // 打包前再清一次 data/ 与 logs/：它们是用户数据，绝不能进发布包。
+  // （曾经把带测试残留的 data/state.json 打进去，新用户一装就是 visitCount=1。）
+  for (const junk of ['data', 'logs']) {
+    const p = path.join(PORTABLE_DIR, junk);
+    if (fs.existsSync(p)) {
+      fs.rmSync(p, { recursive: true, force: true });
+      console.log('   （打包前已清理 ' + junk + '/）');
+    }
   }
   if (fs.existsSync(ZIP_PATH)) fs.rmSync(ZIP_PATH, { force: true });
   console.log('① 打包免安装绿色版…');
@@ -131,10 +142,14 @@ async function uploadAsset(release, filePath, asciiName) {
   // 已存在同名附件时先删掉，避免重复堆积
   try {
     const list = await api('GET', `${API}/repos/${REPO}/releases/${release.id}/attach_files?access_token=${encodeURIComponent(TOKEN)}`);
-    const dup = Array.isArray(list) ? list.find(a => a.title === asciiName || a.title === path.basename(filePath)) : null;
-    if (dup) {
-      await api('DELETE', `${API}/repos/${REPO}/releases/${release.id}/attach_files/${dup.id}?access_token=${encodeURIComponent(TOKEN)}`);
-      console.log('   已删除同名旧附件：' + asciiName);
+    // ⚠️ Gitee 的附件对象用的是 `name` 字段（不是 `title`）。早先用 a.title 比对永远为
+    // undefined，导致重复上传时旧附件从不被删除、Release 上留下多个同名附件。
+    const dup = Array.isArray(list)
+      ? list.filter(a => (a.name || a.title) === asciiName || (a.name || a.title) === path.basename(filePath))
+      : [];
+    for (const d of dup) {
+      await api('DELETE', `${API}/repos/${REPO}/releases/${release.id}/attach_files/${d.id}?access_token=${encodeURIComponent(TOKEN)}`);
+      console.log('   已删除同名旧附件：' + asciiName + ' (id=' + d.id + ')');
     }
   } catch (e) { /* 列表失败不阻塞上传 */ }
 

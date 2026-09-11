@@ -248,6 +248,15 @@ if (!isDev) {
   };
   console.log('⑤ 回收产物到 dist/ …');
   fs.mkdirSync(OUT_PORTABLE, { recursive: true });
+  // ⚠️ 清掉上一次运行/测试留下的 data/ 与 logs/：
+  // 它们是「用户数据」不是「构建产物」。曾经把带测试残留的 data/state.json
+  // 打进发布包，导致新用户一装就是 visitCount=1（首访问候被跳过）。
+  for (const junk of ['data', 'logs']) {
+    try {
+      const p = path.join(OUT_PORTABLE, junk);
+      if (fs.existsSync(p)) { fs.rmSync(p, { recursive: true, force: true }); console.log('   （已清理残留的 ' + junk + '/）'); }
+    } catch (e) { /* 清理失败不阻塞构建 */ }
+  }
   const copies = [
     [pick('xinyu.exe'), path.join(OUT_PORTABLE, PRODUCT_NAME + '.exe')],
     [pick('xinyu-backend.exe'), path.join(OUT_PORTABLE, 'xinyu-backend.exe')],

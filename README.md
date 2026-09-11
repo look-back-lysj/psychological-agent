@@ -65,7 +65,7 @@ npm start
 | 形态 | 下载 | 说明 |
 | --- | --- | --- |
 | **桌面安装包（推荐）** | [`shouanren-3.1.0-x64-setup.exe`](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases/download/v3.1.0/shouanren-3.1.0-x64-setup.exe) | 约 17 MB，**当前用户安装，免管理员**，带开始菜单与卸载项 |
-| **免安装绿色版** | [`shouanren-3.1.0-portable.zip`](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases/download/v3.1.0/shouanren-3.1.0-portable.zip) | 解压后双击 `守岸人.exe`，**不用安装、也不用装 Node.js** |
+| **免安装绿色版** | [`shouanren-3.1.0-win-x64-portable.zip`](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases/download/v3.1.0/shouanren-3.1.0-win-x64-portable.zip) | 解压后双击 `守岸人.exe`，**不用安装、也不用装 Node.js** |
 | 本地：便携版 | `dist/守岸人桌面版/` | 双击 `守岸人.exe`，绿色免安装 |
 | 本地：安装包 | `dist/守岸人_3.1.0_x64-setup.exe` | 与在线版本一致 |
 
