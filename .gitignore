@@ -2,7 +2,15 @@ node_modules/
 .env
 .env.local
 .env.*.local
-logs/
+# 日志目录默认不入库（可能含运行期原文），但**交付要求的调用记录与成本台账必须入库**：
+# ⚠️ 必须写 logs/* 而不是 logs/ ——
+#    Git 的规则是「父目录被排除时，无法再重新包含其子文件」，所以用 logs/ 会导致下面
+#    的 !logs/xxx 全部失效（本项目踩过这个坑）。写 logs/* 只排除目录内容，白名单才生效。
+logs/*
+!logs/usage_summary.md
+!logs/calls.sample.jsonl
+!logs/README.md
+!logs/.gitkeep
 *.log
 
 # 构建产物与发布包（可本地生成，不入库）

@@ -1,0 +1,7 @@
+{"ts":"2026-09-11T13:55Z","strategy":"S1_listen","riskLevel":"L0","event":"error","model":"deepseek-flash","inputLength":6,"latencyMs":2,"ok":false,"error":"model_not_configured: 尚未填写 API Key，请在设置里填写后重试。","usage":null}
+{"ts":"2026-09-11T15:21Z","strategy":"S1_listen","riskLevel":"L0","event":"error","model":"deepseek-flash","inputLength":8,"latencyMs":3,"ok":false,"error":"model_not_configured: 尚未填写 API Key，请在设置里填写后重试。","usage":null}
+{"ts":"2026-09-11T15:21Z","strategy":"S1_listen","riskLevel":"L0","event":"error","model":"deepseek-flash","inputLength":20,"latencyMs":2,"ok":false,"error":"model_not_configured: 尚未填写 API Key，请在设置里填写后重试。","usage":null}
+{"ts":"2026-09-11T15:21Z","strategy":"S0_crisis","riskLevel":"L3","event":"crisis_protocol","model":"deepseek-flash","inputLength":5,"latencyMs":1,"ok":true,"error":null,"usage":null}
+{"ts":"2026-09-11T15:21Z","strategy":"S0_crisis","riskLevel":"L3","event":"crisis_protocol","model":"deepseek-flash","inputLength":19,"latencyMs":0,"ok":true,"error":null,"usage":null}
+{"ts":"2026-09-11T15:21Z","strategy":"S2_empathy","riskLevel":"L0","event":"error","model":"deepseek-flash","inputLength":5,"latencyMs":2,"ok":false,"error":"model_not_configured: 尚未填写 API Key，请在设置里填写后重试。","usage":null}
+{"ts":"2026-09-11T15:21Z","strategy":"S0_crisis","riskLevel":"L3","event":"crisis_protocol","model":"deepseek-flash","inputLength":12,"latencyMs":0,"ok":true,"error":null,"usage":null}
