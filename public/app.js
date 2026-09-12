@@ -115,6 +115,16 @@
   const DEFAULT_TITLE = '新的对话';
   const TITLE_MAX = 16;
 
+  // 本机接口访问令牌：由后端在返回 index.html 时注入到页面上（见 src/server.js）。
+  // 作用：让「浏览器里的第三方页面」「本机其它进程」无法直接调用 /api/* 私密接口。
+  // 缺失时退化为不带该头（老页面 / 直接打开静态文件），后端会拒绝并给出中文提示。
+  const API_TOKEN = (typeof window !== 'undefined' && window.__XINYU_TOKEN) || '';
+  function authHeaders(extra) {
+    const h = extra || {};
+    if (API_TOKEN) h['X-XinYu-Token'] = API_TOKEN;
+    return h;
+  }
+
   // 策略 / 风险英文 key -> 中文标签（未知则原样显示）
   const STRATEGY_LABELS = {
     S0_crisis: '危机安全',
@@ -816,7 +826,7 @@
   // 统一的后端请求：始终 try/catch，失败抛中文错误；非 2xx 或 ok!==true 一律视为失败
   async function apiRequest(path, options) {
     const opts = options || {};
-    const init = { method: opts.method || 'GET', headers: {}, cache: 'no-store' };
+    const init = { method: opts.method || 'GET', headers: authHeaders(), cache: 'no-store' };
     if (opts.body !== undefined) {
       init.headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(opts.body);
@@ -1909,7 +1919,7 @@
   async function streamChat(text, sessionId, assistant, signal, isRetry) {
     const res = await fetch('/api/chat/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+      headers: authHeaders({ 'Content-Type': 'application/json', 'Accept': 'text/event-stream' }),
       body: JSON.stringify({ message: text, sessionId: sessionId, retry: isRetry === true }),
       signal: signal,
     });
@@ -1954,7 +1964,7 @@
   async function fetchNonStream(text, sessionId, signal, isRetry) {
     const res = await fetch('/api/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ message: text, sessionId: sessionId, retry: isRetry === true }),
       signal: signal,
     });
@@ -2447,7 +2457,7 @@
   async function refreshHealth(silent) {
     if (!silent) setHealth('loading', '正在确认连接', '模型还在确认');
     try {
-      const res = await fetch('/api/health', { cache: 'no-store' });
+      const res = await fetch('/api/health', { cache: 'no-store', headers: authHeaders() });
       if (!res.ok) throw makeApiError('http_' + res.status, res.status);
       const data = await res.json();
       if (!data || data.ok !== true) throw makeApiError('bad_payload', 0);
@@ -2487,7 +2497,7 @@
   // 带超时的 JSON 请求：网络失败 / 超时 / 非 2xx / ok !== true 一律返回 null
   async function fetchDataWithTimeout(path, options, timeoutMs) {
     const opts = options || {};
-    const init = { method: opts.method || 'GET', headers: {}, cache: 'no-store' };
+    const init = { method: opts.method || 'GET', headers: authHeaders(), cache: 'no-store' };
     if (opts.body !== undefined) {
       init.headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(opts.body);

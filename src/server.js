@@ -2,7 +2,8 @@
  * 模块：server —— HTTP 服务入口（Express 装配 + 优雅退出）
  * 层级：入口（src/ 顶层，由根目录 main.js 转发进入）
  * 职责：加载 .env、定位 public/ 静态目录、挂 /api/chat 与四个管理 router、暴露 /api/health、
- *      监听 127.0.0.1，并在 SIGINT/SIGTERM 时同步落盘会话、尽力补抽长期记忆后退出。
+ *      监听 127.0.0.1，并在 SIGINT/SIGTERM 时同步落盘会话、尽力补抽长期记忆后退出；
+ *      并对本机接口做防护：Host 白名单（挡 DNS rebinding）+ Origin/Referer 校验（挡跨站）+ 启动随机令牌。
  * 依赖：chat（./chat）、infra/sessions、api/routes、infra/config、domain/persona、pipeline/prompts
  * 被依赖：根目录 main.js（薄转发）、src/index.js、tests 之外的冒烟脚本
  * 改动风险：🔴 高 —— 改完要跑 node --check + 启动冒烟（curl /api/health、curl / 找 id="messages"）
@@ -10,10 +11,12 @@
  *      以及 appRoot 指向项目根（public/ 找不到会让静态资源 404）。
  * 不要做什么：
  *   1) 不要把 app.listen(PORT, HOST) 改成不带 host 的 app.listen(PORT)（默认绑 0.0.0.0，同网段可读私密对话）；
- *   2) 不要移除 shutdown 里的 sessions.flush()（否则最后几轮对话会丢）。
+ *   2) 不要移除 shutdown 里的 sessions.flush()（否则最后几轮对话会丢）；
+ *   3) 不要移除 hostGuard / originGuard / tokenGuard 三道本机接口防护。
  */
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const dotenv = require('dotenv');
 const express = require('express');
 
@@ -48,7 +51,74 @@ const { configRouter, memoryRouter, comebackRouter, sessionsRouter } = require('
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+/* ────────────────────────────────────────────────────────────────
+ * 本机接口防护（三层）：这个服务承载用户私密对话，而「绑定 127.0.0.1」只挡住局域网，
+ * 挡不住本机的其它进程，也挡不住浏览器里的第三方页面：
+ *   ① Host 白名单   —— 防 DNS rebinding（攻击域名重新解析到 127.0.0.1 后浏览器视为同源）
+ *   ② Origin/Referer —— 防跨站请求（CSRF）
+ *   ③ 每次启动随机 token（服务端注入页面，前端带 X-XinYu-Token）—— 防本机其它进程直接调用
+ * /api/health 不校验 token：桌面外壳靠它做启动就绪探测。
+ * ──────────────────────────────────────────────────────────────── */
+const TOKEN = process.env.XINYU_TOKEN || crypto.randomBytes(24).toString('base64url');
+const OK_HOSTS = new Set([
+  '127.0.0.1:' + PORT, 'localhost:' + PORT, '[::1]:' + PORT,
+  '127.0.0.1', 'localhost', '[::1]'
+]);
+const OK_ORIGINS = new Set([
+  'http://127.0.0.1:' + PORT, 'http://localhost:' + PORT, 'http://[::1]:' + PORT
+]);
+
+function sameToken(given) {
+  if (!given || typeof given !== 'string') return false;
+  const a = Buffer.from(given);
+  const b = Buffer.from(TOKEN);
+  if (a.length !== b.length) return false;
+  try { return crypto.timingSafeEqual(a, b); } catch (e) { return false; }
+}
+
+function originOf(value) {
+  try { return new URL(String(value)).origin; } catch (e) { return 'invalid'; }
+}
+
+function tokenFrom(req) {
+  if (req.headers['x-xinyu-token']) return String(req.headers['x-xinyu-token']);
+  const q = req.query && req.query.t;
+  if (q) return Array.isArray(q) ? String(q[0]) : String(q);
+  const m = String(req.headers.cookie || '').match(/(?:^|;\s*)xinyu_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+
+app.use((req, res, next) => {
+  const host = String(req.headers.host || '').toLowerCase();
+  if (host && !OK_HOSTS.has(host)) {
+    return res.status(403).json({ ok: false, error: '请求的主机名不被信任，已拒绝。' });
+  }
+  const ref = req.headers.origin || req.headers.referer;
+  if (ref && !OK_ORIGINS.has(originOf(ref))) {
+    return res.status(403).json({ ok: false, error: '请求来源不被信任，已拒绝。' });
+  }
+  // 带 /api/ 前缀的接口需要访问令牌；/api/health 例外（桌面外壳用它探测就绪）
+  if (req.path.indexOf('/api/') === 0 && req.path !== '/api/health' && !sameToken(tokenFrom(req))) {
+    return res.status(403).json({ ok: false, error: '缺少或错误的访问令牌，已拒绝。' });
+  }
+  next();
+});
+
 app.use(express.json({ limit: '1mb' }));
+
+// index.html 注入访问令牌：同源页面能读到，跨站页面读不到（拿不到 token 就调不动接口）
+app.get(['/', '/index.html'], (req, res, next) => {
+  try {
+    const file = path.join(publicDir, 'index.html');
+    let html = fs.readFileSync(file, 'utf8');
+    const tag = '<script>window.__XINYU_TOKEN=' + JSON.stringify(TOKEN) + ';</script>';
+    html = html.indexOf('</head>') >= 0 ? html.replace('</head>', tag + '</head>') : tag + html;
+    res.set('Cache-Control', 'no-store');
+    res.type('html').send(html);
+  } catch (e) {
+    next();
+  }
+});
 app.use(express.static(publicDir));
 app.use('/api/chat', chatRoute);
 app.use('/api/config', configRouter);
