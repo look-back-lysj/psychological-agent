@@ -86,7 +86,7 @@
 
       <div class="sidebar__foot">
         <button class="ghost-btn" id="open-settings" type="button" aria-expanded="false">
-          <svg class="icon"><use href="#i-settings" /></svg><span>模型设置</span>
+          <svg class="icon"><use href="#i-settings" /></svg><span>设置</span>
         </button>
         <button class="ghost-btn" id="open-memory" type="button" aria-expanded="false">
           <svg class="icon"><use href="#i-memory" /></svg><span>长期记忆</span>
@@ -307,7 +307,7 @@
   <!-- 设置抽屉 -->
   <aside class="drawer" id="settings-drawer" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
     <header class="drawer__head">
-      <h2 id="settings-title">模型设置</h2>
+      <h2 id="settings-title">设置</h2>
       <button class="icon-btn" id="settings-close" type="button" aria-label="关闭设置">
         <svg class="icon"><use href="#i-close" /></svg>
       </button>
@@ -319,27 +319,7 @@
           <option value="deepseek-flash">deepseek-flash（推荐，便宜快）</option>
           <option value="deepseek-v4-pro">deepseek-v4-pro（更稳，稍贵）</option>
         </select>
-      </div>
-
-      <div class="field">
-        <label class="field__label" for="setting-temperature">温度 <span class="field__value" id="setting-temperature-value">0.8</span></label>
-        <input class="range" id="setting-temperature" type="range" min="0" max="2" step="0.1" value="0.8" />
-        <p class="field__hint">控制回复的随机程度，只在关闭思考模式时生效。</p>
-      </div>
-
-      <div class="field">
-        <label class="field__label" for="setting-maxtokens">最大输出 max_tokens</label>
-        <input class="input" id="setting-maxtokens" type="number" min="64" max="8192" step="64" value="512" inputmode="numeric" />
-        <p class="field__hint">64–8192，越大回复可以越长，也越慢。</p>
-      </div>
-
-      <div class="field">
-        <span class="field__label">思考模式</span>
-        <label class="switch">
-          <input type="checkbox" id="setting-thinking" />
-          <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
-          <span class="switch__text">开启后回复更谨慎，但更慢；开启时温度参数不生效。</span>
-        </label>
+        <p class="field__hint">默认即可，一般不用改。</p>
       </div>
 
       <div class="field">
@@ -355,17 +335,42 @@
           <input class="input" id="setting-key-input" type="password" placeholder="粘贴新的 API Key" autocomplete="off" spellcheck="false" />
           <button class="btn btn--ghost" id="setting-key-eye" type="button">显示</button>
         </div>
-        <p class="field__hint">Key 只保存在本机服务端配置文件；浏览器不保存，也不会写进日志。</p>
+        <p class="field__hint">只存在这台电脑上；不会保存到浏览器，也不会写进日志。</p>
       </div>
 
-      <div class="field">
-        <span class="field__label">调试面板</span>
-        <label class="switch">
-          <input type="checkbox" id="setting-debug" />
-          <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
-          <span class="switch__text">在每条回复下方显示这一轮的风险等级、策略与完整路由 JSON。</span>
-        </label>
-      </div>
+      <details class="adv">
+        <summary>高级设置（一般不用改）</summary>
+
+        <div class="field">
+          <label class="field__label" for="setting-temperature">回复活泼程度 <span class="field__value" id="setting-temperature-value">0.8</span></label>
+          <input class="range" id="setting-temperature" type="range" min="0" max="2" step="0.1" value="0.8" />
+          <p class="field__hint">数值越大，回复变化越多；默认 0.8 即可。</p>
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="setting-maxtokens">最大输出长度</label>
+          <input class="input" id="setting-maxtokens" type="number" min="64" max="8192" step="64" value="512" inputmode="numeric" />
+          <p class="field__hint">默认 512 已经够日常聊天；只在需要更长回复时才调大。</p>
+        </div>
+
+        <div class="field">
+          <span class="field__label">思考模式</span>
+          <label class="switch">
+            <input type="checkbox" id="setting-thinking" />
+            <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+            <span class="switch__text">开启后回复更谨慎，但更慢；日常陪伴保持关闭即可。</span>
+          </label>
+        </div>
+
+        <div class="field">
+          <span class="field__label">调试面板</span>
+          <label class="switch">
+            <input type="checkbox" id="setting-debug" />
+            <span class="switch__track" aria-hidden="true"><span class="switch__thumb"></span></span>
+            <span class="switch__text">显示每轮的风险等级、策略和路由 JSON，只给排查问题用。</span>
+          </label>
+        </div>
+      </details>
 
       <div class="drawer__extra">
         <button class="ghost-btn" id="open-wizard-again" type="button">

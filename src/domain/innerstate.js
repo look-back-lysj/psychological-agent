@@ -34,8 +34,27 @@ function createInnerState() {
     rapport: 0.5,   // 0 陌生 — 1 熟悉：随轮次与自我暴露缓慢上升
     turns: 0,       // 已参与轮数
     lastEmotion: null,
-    lastIntensity: 3
+    lastIntensity: 3,
+    lastUserChars: 0,        // 上一条用户消息净字数（决定回复长度节奏）
+    lastUserIntent: 'venting' // venting | smalltalk | sharing | asking
   };
+}
+
+/**
+ * 本轮用户意图（只用于决定回复形态，不参与安全判定）。
+ * 顺序：明确求助 > 长叙述 > 短应答 > 一般倾诉。
+ */
+function classifyIntent(text) {
+  const raw = String(text == null ? '' : text).trim();
+  const n = raw.replace(/\s+/g, '');
+  if (!n) return 'smalltalk';
+  if (/怎么办|怎么才能|怎么调整|如何|帮我|教我|有什么办法|给.*建议|能不能帮|该不该|要不要|想问问/.test(n)) {
+    return 'asking';
+  }
+  if (/[?？]/.test(n) && n.length > 8) return 'asking';
+  if (n.length >= 60) return 'sharing';
+  if (n.length <= 8) return 'smalltalk';
+  return 'venting';
 }
 
 /**
@@ -62,6 +81,8 @@ function updateInnerState(state, obs) {
   const s = state || createInnerState();
   const o = obs || {};
   s.turns += 1;
+  s.lastUserChars = String(o.userText || '').trim().length;
+  s.lastUserIntent = classifyIntent(o.userText);
 
   const target = emotionScore(o.userEmotion, o.intensity);
   const prev = typeof s.mood === 'number' ? s.mood : 3.4;
@@ -97,28 +118,71 @@ function updateInnerState(state, obs) {
 function replyShape(state) {
   const s = state || createInnerState();
   const mood = s.mood, energy = s.energy, rapport = s.rapport;
+  const intent = s.lastUserIntent || 'venting';
+  const userChars = Number(s.lastUserChars) || 0;
 
-  // 句子上限：低落 / 疲惫 → 更短；熟悉 → 可以略长
-  let maxSentences = 2;
-  if (mood <= 2.2) maxSentences = 2;
-  else if (mood >= 4.2 && rapport > 0.7) maxSentences = 3;
-  if (energy <= 2.5) maxSentences = Math.min(maxSentences, 2);
-
-  // 提问概率：对方低落时不追问；熟悉且情绪平稳时可以稍微主动
+  // 长度不是固定值：跟随对方这条消息的意图与体量，但保留上限，避免说教式长文。
+  let maxSentences = 3;
+  let maxChars = 180;
+  let initiative = 2;
   let askProbability = 0.35;
-  if (mood <= 2.2) askProbability = 0.15;
-  else if (mood >= 3.8 && rapport > 0.6) askProbability = 0.5;
-  if (s.lastIntensity >= 4) askProbability = Math.min(askProbability, 0.2);
+
+  if (intent === 'smalltalk') {
+    maxSentences = 2;
+    maxChars = 80;
+    initiative = 1;
+    askProbability = 0.6;
+  } else if (intent === 'sharing') {
+    maxSentences = 4;
+    maxChars = 260;
+    initiative = 2;
+    askProbability = 0.5;
+  } else if (intent === 'asking') {
+    maxSentences = 5;
+    maxChars = 340;
+    initiative = 3;
+    askProbability = 0.75;
+  } else {
+    maxSentences = 3;
+    maxChars = 180;
+    initiative = 2;
+    askProbability = 0.35;
+  }
+
+  // 对方说得少，可以跟着短；对方写了一段，不要只回一个万能短句。
+  if (userChars > 0 && userChars <= 8) maxChars = Math.min(maxChars, 100);
+  else if (userChars >= 120) maxChars = Math.min(maxChars, 300);
+
+  // 低落 / 高强度情绪：先承接，少推进、少提问。
+  if (mood <= 2.2 || s.lastIntensity >= 4) {
+    maxSentences = Math.min(maxSentences, 2);
+    maxChars = Math.min(maxChars, 100);
+    initiative = Math.min(initiative, 1);
+    askProbability = Math.min(askProbability, 0.15);
+  }
+  if (energy <= 2.5) {
+    maxSentences = Math.min(maxSentences, 3);
+    maxChars = Math.min(maxChars, 220);
+  }
+
+  // 熟悉度上来以后，可以稍微展开；仍然留有上限。
+  if (rapport > 0.7) {
+    maxSentences = Math.min(6, maxSentences + 1);
+    maxChars = Math.min(400, maxChars + 60);
+  }
 
   // 共情强度：对方越难受，越先承接
   const empathyStrength = mood <= 2.5 || s.lastIntensity >= 4 ? 'high' : (mood >= 4 ? 'low' : 'normal');
 
   return {
     maxSentences,
+    maxChars,
     askProbability: round1(askProbability),
+    initiative,
+    userChars,
+    intent,
     empathyStrength,
-    warmth: rapport > 0.7 ? 'warm' : (rapport > 0.35 ? 'normal' : 'reserved'),
-    maxChars: energy <= 2.5 ? 90 : (maxSentences <= 2 ? 110 : 150)
+    warmth: rapport > 0.7 ? 'warm' : (rapport > 0.35 ? 'normal' : 'reserved')
   };
 }
 
@@ -129,9 +193,9 @@ function describeInnerState(state) {
   const s = state || createInnerState();
   const shape = replyShape(s);
   return [
-    '你此刻的内在状态（仅影响语气，不要向对方提起）：',
-    '- 心情：' + s.mood + '/5；精力：' + s.energy + '/5；与对方的熟悉度：' + s.rapport + '/1',
-    '- 本次回复建议：最多 ' + shape.maxSentences + ' 句，约 ' + shape.maxChars + ' 字以内，共情强度 ' + shape.empathyStrength
+    '你此刻的内在状态（只影响语气，不要向对方提起）：',
+    '- 感觉：' + (shape.empathyStrength === 'high' ? '先稳稳接住' : (shape.warmth === 'warm' ? '可以略微靠近' : '保持克制')) + '。',
+    '- 这一轮适合：约 ' + shape.maxSentences + ' 句 / ' + shape.maxChars + ' 字以内，主动级别 P' + shape.initiative + '。'
   ].join(NL);
 }
 

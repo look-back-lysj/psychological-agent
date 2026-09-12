@@ -504,6 +504,10 @@
   function isVisibleNode(node) {
     if (!node || node.hidden || node.disabled) return false;
     try { if (node.closest('[hidden]')) return false; } catch (e) { /* 忽略 */ }
+    // 关闭的 <details> 内容不会被浏览器聚焦；焦点陷阱也不能把这些元素算进去。
+    try {
+      if (typeof node.getClientRects === 'function' && node.getClientRects().length === 0) return false;
+    } catch (e) { /* 忽略 */ }
     return true;
   }
 

@@ -239,6 +239,7 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
     nextHint: decision.nextHint,
     plan,
     shape,
+    userMessage: message,
     engageLevel: ctx.state ? (ctx.state.engageLevel || 0) : 0
   });
   // 关键：当前这句话还没写进会话（在 finalizeTurn 才落库），必须显式追加，

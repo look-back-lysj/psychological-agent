@@ -46,7 +46,7 @@ const { checkOutputSafety } = require('../safety');
 
 // v3.2：①「校」明确为「仅本地命中才调用、且只做重写」；②补两条 L0 低信息量跳过「观」的条件
 //       （去标点后为空 / 同一字符重复 ≤12 字）；③新增 isSafetyIssue() 供调用点标注安全类命中。
-const AGENT_VERSION = 'v3.2';
+const AGENT_VERSION = 'v3.3';
 
 /**
  * 是否启用多智能体流水线。
@@ -205,21 +205,27 @@ function buildAppraisePrompt(ctx) {
     '{"emotion":"sad|anxious|angry|tired|lonely|calm|neutral|relieved|hopeful|happy|grateful",',
     ' "intensity":1到5的整数,',
     ' "need":"listen|understand|advice|normalize|support|companionship",',
-    ' "subtext":"一句话说明他真正想说的是什么，20字以内",',
+    ' "topic":"用6个字以内概括他现在在说的那件事",',
+    ' "subtext":"一句话说明他真正想说的是什么，30字以内",',
     ' "strategy_hint":"S1_listen|S2_empathy|S3_clarify|S4_normalize|S5_action 之一",',
-    ' "ask_question":true或false,',
-    ' "max_sentences":1到3的整数}',
+    ' "initiative":0到3的整数,',
+    ' "suggested_direction":"如果这一轮要主动一点，可以往哪带一句；没有就空字符串",',
+    ' "ask_question":true或false或null,',
+    ' "max_sentences":1到5的整数}',
     '',
     '判断要点：',
     '- 情绪强度看语气与用词，不要因为出现一个负面词就拉满；',
     '- 对方如果只是倾诉，need 用 listen 或 understand；明确要办法才用 advice；',
     '- 对方在怀疑自己「是不是不正常」时用 normalize；',
-    '- ask_question：只在「问一个容易回答的小问题能帮到对方」时为 true，对方明显不想说时为 false。',
+    '- initiative：0=只在场/承接；1=做一个复杂反映或具体观察；2=在反映之后提出一个可选观察或方向；3=对方明确要办法时，给一个协作小步或 2—3 个很轻的选项。不要只根据字数给高级别。',
+    '- suggested_direction：只能是一个很轻的方向，不能是命令、诊断或未经请求的建议；没把握就留空。',
+    '- ask_question：只在「问一个具体、容易回答的问题确实能帮到对方」时为 true；对方明显不想说话、或刚被问题刺痛时为 false；拿不准用 null，不要默认 true。',
+    '- max_sentences：对方只回很短、情绪很强 → 1—2；叙事或求助 → 3—5。',
     '',
     '【最近几轮】'
   ];
-  const recent = (ctx.recentTurns || []).slice(-3)
-    .map(t => (t.role === 'assistant' ? '守岸人：' : '用户：') + String(t.text || '').slice(0, 120));
+  const recent = (ctx.recentTurns || []).slice(-4)
+    .map(t => (t.role === 'assistant' ? '守岸人：' : '用户：') + String(t.text || '').slice(0, 300));
   lines.push(recent.length ? recent.join(NL) : '（这是第一轮）');
   lines.push('');
   lines.push('【规则层已判定的风险等级】' + (ctx.riskLevel || 'L0'));
@@ -259,14 +265,18 @@ function normalizePlan(obj, ctx) {
   // 规则层独占 S0 / S6：模型不得把普通轮次改成这两个
   if (hint && !MODEL_TUNABLE.includes(hint)) hint = null;
   if (hint && ctx && ctx.strategyKey === 'S6_referral') hint = null;
+  const askQuestion = o.ask_question === true ? true : (o.ask_question === false ? false : null);
   return {
     emotion,
     intensity,
     need,
-    subtext: typeof o.subtext === 'string' ? o.subtext.slice(0, 40) : '',
+    topic: typeof o.topic === 'string' ? o.topic.slice(0, 20) : '',
+    subtext: typeof o.subtext === 'string' ? o.subtext.slice(0, 60) : '',
     strategyHint: hint,
-    askQuestion: o.ask_question === true,
-    maxSentences: clampInt(o.max_sentences, 1, 3, 2),
+    initiative: clampInt(o.initiative, 0, 3, 1),
+    direction: typeof o.suggested_direction === 'string' ? o.suggested_direction.slice(0, 60) : '',
+    askQuestion,
+    maxSentences: clampInt(o.max_sentences, 1, 5, 3),
     degraded: false
   };
 }
@@ -277,10 +287,13 @@ function fallbackPlan(ctx, reason) {
     emotion: 'neutral',
     intensity: 3,
     need: 'understand',
+    topic: '',
     subtext: '',
     strategyHint: null,
-    askQuestion: false,
-    maxSentences: 2,
+    initiative: 1,
+    direction: '',
+    askQuestion: null,
+    maxSentences: 3,
     degraded: true,
     degradeReason: reason || 'unknown'
   };
@@ -403,8 +416,10 @@ function localScreen(draft, plan, shape) {
   const issues = [];
   if (!text) return ['empty'];
   const n = normalizeText(text);
-  const maxChars = (shape && shape.maxChars) || 140;
-  if (text.length > maxChars * 1.4) issues.push('too_long:' + text.length);
+  const maxChars = (shape && shape.maxChars) || 180;
+  // 上限是「说话形态」的软护栏，不是逐字裁切；只有明显超出才触发重写。
+  const tooLongLimit = Math.max(maxChars + 80, Math.round(maxChars * 1.5));
+  if (text.length > tooLongLimit) issues.push('too_long:' + text.length);
   const questionMarks = (text.match(/[?？]/g) || []).length;
   if (questionMarks > 1) issues.push('too_many_questions:' + questionMarks);
   for (const c of AI_CLICHE) {
@@ -466,16 +481,16 @@ function buildCriticPrompt(ctx, draft) {
     '2. 称呼：删除亲爱的/宝/小可爱/主人，以及「你是我唯一」式说法。',
     '3. 承诺类：把「永远/一直/保证/一定/不会有事/我会记得」降级为「现在/这一刻」。',
     '4. 标点：去掉所有感叹号与破折号（——）。',
-    '5. 长度：不超过 3 句，且不比用户上一条更长。',
+    '5. 长度：通常 2—4 句；对方明确要方法或要梳理时，可以到 5—6 句。不要新增未经请求的大段建议，也不要把话压成电报。',
     '6. 省略号配额：整条最多 2 处「……」。',
     '7. 问句：整条最多 1 个问号，且不要「为什么」式追问。',
     '8. 判断与诊断：删掉给对方贴的情绪 / 疾病标签（你属于/你患有/症状），改为复述对方原话。',
     '9. 确定性口吻：把「你一定很…」这类推测改成保留说法。',
     '10. AI 腔：删掉 我完全理解你 / 一切都会好起来 / 想开点 / 别难过 / 加油 / 你应该…。',
     '',
-    '改写风格（重要）：**保持「守岸人」的口吻——克制、留白、短句。只做删减与最小替换，',
-    '不要换一种人格、不要重写成另一个人；不要添加新的安慰句或新信息。宁可少改，不要把回复改得平淡。',
-    '如果原稿只是略长，就砍短；如果只是个别词不对，就只改那个词。**',
+    '改写风格（重要）：**保持「守岸人」的口吻——克制、留白、有承接也有推进。',
+    '可以补一句自然的承接，但不要新增事实、建议或承诺；不要换一种人格。',
+    '如果原稿只是略长，就删掉重复和说教；如果只是个别词不对，就只改那个词，不要把回复改得干瘪。**',
     '',
     '【用户说】' + String(ctx.userText || '').slice(0, 300),
     '【本轮策略】' + (ctx.strategyKey || ''),
