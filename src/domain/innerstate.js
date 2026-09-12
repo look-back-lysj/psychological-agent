@@ -1,4 +1,16 @@
 /**
+ * 模块：domain/innerstate —— 内在状态（心情 / 精力 / 熟悉度 → 表达约束）
+ * 层级：domain L1（纯规则）
+ * 职责：维护会话级内在状态并转成句长、提问概率等表达约束（replyShape），让回复节奏有起伏。
+ * 依赖：无
+ * 被依赖：chat/pipeline.js（describeInnerState / updateInnerState / replyShape）、infra/sessions（createInnerState）
+ * 改动风险：🟢 低 —— node --check + node tests/run.js
+ * 契约：createInnerState / updateInnerState / describeInnerState / replyShape 的导出名与返回字段
+ * 不要做什么：
+ *   1) 不要在这里读会话存储或调用模型（本模块必须无副作用、可纯函数测试）
+ *   2) 不要引入 fs / fetch
+ */
+/**
  * 守岸人 · 内在状态
  *
  * 让多轮对话不机械的关键：会话内维护一组会缓慢变化的「内在状态」，

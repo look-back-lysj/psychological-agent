@@ -1,4 +1,16 @@
 /**
+ * 模块：infra/comeback —— 「回来」问候与首访判定
+ * 层级：infra L2（有状态 / 外部 IO）
+ * 职责：根据 lastSeenAt / visitCount 决定是否给「回来」问候，并写 data/state.json。
+ * 依赖：core/paths、infra/memory、core/utils
+ * 被依赖：api/routes（getComeback）
+ * 改动风险：🟡 中 —— node --check + node tests/run.js
+ * 契约：getComeback 的导出名与返回结构
+ * 不要做什么：
+ *   1) 不要改 data/state.json 的 lastSeenAt / visitCount 字段名（与 P0 修复相关）
+ *   2) 不要在这里读对话原文做判断
+ */
+/**
  * 守岸人 · 「回来」体验（情感连续性）
  *
  * 目标：用户每次打开页面，都能感到「它记得我」。
@@ -12,9 +24,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { dataDir } = require('./paths');
+const { dataDir } = require('../core/paths');
 const memory = require('./memory');
-const { truncate } = require('./utils');
+const { truncate } = require('../core/utils');
 
 // ── 常量 ────────────────────────────────────────────────────────
 const STATE_FILE_NAME = 'state.json';

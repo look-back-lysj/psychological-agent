@@ -30,7 +30,7 @@
 | # | 题目要求 | 需要的证据 | 现状 | 判定 |
 | --- | --- | --- | --- | --- |
 | 1 | 基于大模型 API 搭建对话智能体 | 可运行 Demo + **真实调用记录** | 可运行 ✓；**调用记录只有 3 条「演示占位」，没有一条真实调用** | 未完成 |
-| 2 | 角色设定、语气、安全边界，明确不做什么 | 角色卡 + 语气规范 + 禁止清单 | `docs/persona.md`、`docs/design.md` 齐全，且 `src/persona.js`、`src/safety.js` 有代码对应 | 完成 |
+| 2 | 角色设定、语气、安全边界，明确不做什么 | 角色卡 + 语气规范 + 禁止清单 | `docs/persona.md`、`docs/design.md` 齐全，且 `src/domain/persona.js`、`src/safety.js` 有代码对应 | 完成 |
 | 3 | **心理对话策略选择机制** | 策略库 + 路由 + **可解释输出** | `src/strategy.js` S0—S6 + 状态机；调试面板可显示策略标签 | 完成 |
 | 4 | 调研 1—2 个同类智能体，说明取舍 | 竞品调研文档 | `docs/competitor-research.md` | 完成 |
 | 5 | 2—3 个场景 + **2 位同学试用反馈** | 场景脚本 + 调用记录 + 反馈表 | 场景 4 个 ✓；**同学反馈表是空模板** | 未完成 |
@@ -80,7 +80,7 @@ win.navigate(parsed);
 1. 对话记录存在浏览器的 `localStorage`（`public/app.js` 的 `loadState` / `saveState`）；
 2. `localStorage` 按 **origin（协议+主机+端口）** 隔离；
 3. 每次启动端口都不同，**每次都是一个全新的 origin，localStorage 是空的，所有会话记录消失**；
-4. 后端 `src/sessions.js` 的会话只存在**进程内存**里（`Map` + 6 小时 TTL），重启后端也没了。
+4. 后端 `src/infra/sessions.js` 的会话只存在**进程内存**里（`Map` + 6 小时 TTL），重启后端也没了。
 
 **结果**：用户每次打开应用，看到的是空白的欢迎页；模型对最近说过的话一无所知，只剩一条条被抽取出来的长期记忆碎片。**「不像真人」的体感，一大半来自这里。**
 
@@ -94,14 +94,14 @@ win.navigate(parsed);
 ### P0-2 提示词里她自称「心屿」
 
 **位置**：
-- `src/agents.js:169` — `.map(t => (t.role === 'assistant' ? '心屿：' : '用户：') + ...)`（「观」agent 读到的历史）
-- `src/chat.js:90` — `turns.map(t => '用户：' + t.user + NL + '心屿：' + t.assistant)`（记忆抽取 agent 读到的历史）
-- `src/agents.js:372` — `const CRITIC_SYSTEM = '...负责检查回复是否像「心屿」且不越界。'`
-- `src/routes.js:120` — 兜底欢迎语 `greeting: '我是心屿。你可以先坐一会儿，不用急着说什么。'`
+- `src/pipeline/agents.js:169` — `.map(t => (t.role === 'assistant' ? '心屿：' : '用户：') + ...)`（「观」agent 读到的历史）
+- `src/chat/:90` — `turns.map(t => '用户：' + t.user + NL + '心屿：' + t.assistant)`（记忆抽取 agent 读到的历史）
+- `src/pipeline/agents.js:372` — `const CRITIC_SYSTEM = '...负责检查回复是否像「心屿」且不越界。'`
+- `src/api/routes.js:120` — 兜底欢迎语 `greeting: '我是心屿。你可以先坐一会儿，不用急着说什么。'`
 
 **为什么这是致命伤**：模型是极强的角色模仿器。你在系统提示里说「你是守岸人」，却在每一轮历史里把自己标注成「心屿」，评审 agent 还要求它「像心屿」——**模型收到的信号是自相矛盾的，而历史样本的权重通常高于抽象描述**。这正是「她完全不像守岸人」的直接技术原因之一。
 
-**修法**：全局搜索 `心屿`，把**进入模型上下文**的位置全部改成「守岸人」。同时改掉 `src/persona.js` 文件头那段自相矛盾的注释（它写的是「对用户呈现的身份始终是心屿」）。
+**修法**：全局搜索 `心屿`，把**进入模型上下文**的位置全部改成「守岸人」。同时改掉 `src/domain/persona.js` 文件头那段自相矛盾的注释（它写的是「对用户呈现的身份始终是心屿」）。
 
 > 工作量：S（20 分钟）。**这是一行代码换来的巨大收益。**
 
@@ -121,7 +121,7 @@ win.navigate(parsed);
 
 ### P0-4 演示模式入口会「复活」
 
-**位置**：`src/routes.js:127`
+**位置**：`src/api/routes.js:127`
 
 ```js
 // demoAvailable 让前端知道可以引导没有 Key 的用户试演示模式
@@ -147,7 +147,7 @@ if (data.demoAvailable === true) {
 
 | 位置 | 内容 |
 | --- | --- |
-| `src/demo.js` | 175 行，**仍被 `src/chat.js:28` 和 `src/routes.js:16` require** |
+| `src/demo.js` | 175 行，**仍被 `src/chat/:28` 和 `src/api/routes.js:16` require** |
 | `public/app.js` | 36 处 `demo` 引用、5 个死函数（`applyDemoPill` / `syncDemoUI` / `loadDemo` / `toggleDemoFromEntry` / `maybeAutoDisableDemo`）、4 个死状态变量 |
 | `public/index.html` | `#demo-entry` 按钮 + 文案「没有 API Key？先用演示模式感受一下」 |
 
@@ -191,9 +191,9 @@ if (data.demoAvailable === true) {
 
 ### P0-9 记忆模块的两个逻辑错误（调研中实测发现）
 
-**位置**：`src/memory.js`
+**位置**：`src/infra/memory.js`
 
-**错误 1 — 接替链断了**（`src/memory.js:192`）：
+**错误 1 — 接替链断了**（`src/infra/memory.js:192`）：
 
 ```js
 if (near && hasNegationFlip(near.text, clean)) {
@@ -205,7 +205,7 @@ if (near && hasNegationFlip(near.text, clean)) {
 
 结果：旧记忆被标记为「已被取代」，但**无法回溯是被哪一条取代的**。用户在记忆面板看到一条失效记录时，没法解释「这条为什么过期了」。
 
-**错误 2 — 淘汰策略会丢重要记忆**（`src/memory.js:100`）：
+**错误 2 — 淘汰策略会丢重要记忆**（`src/infra/memory.js:100`）：
 
 ```js
 items: (store.items || []).slice(-MAX_ITEMS),   // ← 按插入顺序，丢弃最旧的
@@ -280,7 +280,7 @@ items: (store.items || []).slice(-MAX_ITEMS),   // ← 按插入顺序，丢弃�
 | L5 正常化 | 「很多人也这样」 | 「是不是只有我这样」 | 变成贴标签 |
 | L6 明确邀请＋留退路 | 「不想说也可以」 | 明确拒绝（「别问了」） | 邀请里藏条件 |
 
-> **现状**：`src/strategy.js` 已有 `ENGAGE_LADDER`，`src/prompts.js` 已有 `buildEngageBlock(level)`，骨架是对的。**v3 要做的不是重建，而是把上表的「判定信号」和「失败模式」补进现有实现**，并加回归测试。
+> **现状**：`src/strategy.js` 已有 `ENGAGE_LADDER`，`src/pipeline/prompts.js` 已有 `buildEngageBlock(level)`，骨架是对的。**v3 要做的不是重建，而是把上表的「判定信号」和「失败模式」补进现有实现**，并加回归测试。
 
 ### 3.2 守岸人角色还原：一个必须说清楚的诚实边界
 
@@ -303,7 +303,7 @@ items: (store.items || []).slice(-MAX_ITEMS),   // ← 按插入顺序，丢弃�
 
 ### 3.2b 「示例优先」这个决策要修正（这条推翻了我之前的一个判断）
 
-我之前跟你说过「**规则约束不住模型，示例才是关键**」，并据此把 `src/persona.js` 做成了示例优先（10 组对照改写 + 10 组 few-shot）。**调研推翻了其中一半。**
+我之前跟你说过「**规则约束不住模型，示例才是关键**」，并据此把 `src/domain/persona.js` 做成了示例优先（10 组对照改写 + 10 组 few-shot）。**调研推翻了其中一半。**
 
 **关键论文：arXiv 2402.09954《Crafting a Good Prompt or Providing Exemplary Dialogues?》**——用的是**中文真实人类对话数据**，正好对口。Response Quality 越高越好：
 
@@ -510,7 +510,7 @@ PIPL 原文（取自政府网站）里有一条**对我们极其关键**：
 
 > 关键点：`fs.writeFileSync` 是**同步**的，≥16ms 的停顿在 **SSE 流式输出期间会肉眼可见卡顿**。
 >
-> 当前 `src/memory.js` 已是 `MAX_ITEMS=200` + 文本 60 字 → 文件 <100 KB，**完全不需要 SQLite**。换 SQLite 的触发条件（任一）：① 开始存原始对话轮次；② 需要按时间区间做查询；③ 单文件 >2 MB 或条目 >2000；④ 需要事务保证多次写不丢。
+> 当前 `src/infra/memory.js` 已是 `MAX_ITEMS=200` + 文本 60 字 → 文件 <100 KB，**完全不需要 SQLite**。换 SQLite 的触发条件（任一）：① 开始存原始对话轮次；② 需要按时间区间做查询；③ 单文件 >2 MB 或条目 >2000；④ 需要事务保证多次写不丢。
 
 **（7）其他**
 
@@ -551,7 +551,7 @@ PIPL 原文（取自政府网站）里有一条**对我们极其关键**：
 | 让模型自评「是否越界」 | **不采用** | 本地正则/词典更快更准更省，且**可回归测试** |
 | `XINYU_AGENTS=off` 开关 | **保留** | 这是我们唯一能做 A/B 的资产，也是《验收清单》的加分项 |
 
-> ⚠️ 顺带纠正：`src/agents.js` 里 `AGENT_VERSION` 实际是 **v3.1**（不是我在别处写的 v3.0）。
+> ⚠️ 顺带纠正：`src/pipeline/agents.js` 里 `AGENT_VERSION` 实际是 **v3.1**（不是我在别处写的 v3.0）。
 
 #### 决策记录 DR-001：保留多 agent（2026-09-11）
 
@@ -577,7 +577,7 @@ PIPL 原文（取自政府网站）里有一条**对我们极其关键**：
 
 ### 3.7 工程参数：官方 SDK 的默认值可以直接抄（附我们当前的差距）
 
-调研员从 **OpenAI / Anthropic 官方 SDK 的源码**（PyPI wheel）与 **DeepSeek 官方文档**里取到了确切参数。对照我们现在的 `src/llm.js`：
+调研员从 **OpenAI / Anthropic 官方 SDK 的源码**（PyPI wheel）与 **DeepSeek 官方文档**里取到了确切参数。对照我们现在的 `src/infra/llm.js`：
 
 | 参数 | 官方 SDK 默认值 | 我们现在的值 | 差距 |
 | --- | --- | --- | --- |
@@ -620,20 +620,20 @@ PIPL 原文（取自政府网站）里有一条**对我们极其关键**：
 | 编号 | 改动 | 文件 | 工作量 |
 | --- | --- | --- | --- |
 | A1 | 固定端口（先试 34117，占用则递增重试） | `src-tauri/src/lib.rs` | S |
-| A2 | 提示词里的「心屿」全部改为「守岸人」 | `src/agents.js`、`src/chat.js`、`src/routes.js` | S |
+| A2 | 提示词里的「心屿」全部改为「守岸人」 | `src/pipeline/agents.js`、`src/chat/`、`src/api/routes.js` | S |
 | A3 | 界面 5 处「屿」改为「守」 | `public/index.html`、`public/app.js` | S |
-| A4 | 删掉 `demoAvailable:true` 注入、前端响应分支、`#demo-entry` 按钮 | `src/routes.js`、`public/app.js`、`public/index.html` | S |
+| A4 | 删掉 `demoAvailable:true` 注入、前端响应分支、`#demo-entry` 按钮 | `src/api/routes.js`、`public/app.js`、`public/index.html` | S |
 | A5 | 删除 `src/demo.js` 及全部死代码 | `src/demo.js`、`chat.js`、`routes.js`、`public/app.js` | M |
 | A6 | 移除未使用的 `better-sqlite3` 依赖 | `package.json` | S |
 | A7 | `identifier` 改为 `com.shouanren.companion` | `src-tauri/tauri.conf.json` | S |
-| A8 | 会话历史迁到后端 `data/sessions.json` | `src/sessions.js`、`src/routes.js`、`public/app.js` | M |
+| A8 | 会话历史迁到后端 `data/sessions.json` | `src/infra/sessions.js`、`src/api/routes.js`、`public/app.js` | M |
 | A9 | 更新 `docs/persona.md` 的诚实标注（语料来源） | `docs/persona.md` | S |
-| A10 | **修 `memory.js`：`supersededBy` 写入真正的新条目 id** | `src/memory.js:192` | S |
-| A11 | **修 `memory.js`：淘汰改为「失效→久未命中→最早写入」，`pinned` 豁免** | `src/memory.js:100` | S |
+| A10 | **修 `memory.js`：`supersededBy` 写入真正的新条目 id** | `src/infra/memory.js:192` | S |
+| A11 | **修 `memory.js`：淘汰改为「失效→久未命中→最早写入」，`pinned` 豁免** | `src/infra/memory.js:100` | S |
 | A12 | 设置页加入诚实告知文案（本地存储 + 仍会发给 DeepSeek） | `public/index.html` | S |
-| A13 | 重试状态码补 **408 / 409 / 502 / 504**，退避**封顶 8s**，并处理 **`Retry-After`**（>120s 放弃） | `src/llm.js` | S |
-| A14 | `testConnection` 改用 **`GET /models`**（零 token 成本） | `src/llm.js` | S |
-| A15 | SSE 写出前调用 **`res.flushHeaders()`** | `src/chat.js` | S |
+| A13 | 重试状态码补 **408 / 409 / 502 / 504**，退避**封顶 8s**，并处理 **`Retry-After`**（>120s 放弃） | `src/infra/llm.js` | S |
+| A14 | `testConnection` 改用 **`GET /models`**（零 token 成本） | `src/infra/llm.js` | S |
+| A15 | SSE 写出前调用 **`res.flushHeaders()`** | `src/chat/` | S |
 
 **验收**：重启应用 3 次，历史对话**都在**；模型回复里不出现「心屿」；界面上搜不到「屿」字；点不到任何「演示模式」入口；连续写入 210 条记忆后，**置顶与高重要性条目仍在**；故意填错 Key 给出明确中文提示而非白屏。
 

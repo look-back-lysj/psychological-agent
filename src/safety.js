@@ -1,4 +1,19 @@
 /**
+ * 模块：safety —— 安全边界（前置风险分级 L0—L3 + 输出后置检查）
+ * 层级：冻结契约（留在 src/ 顶层，不随分层迁移）
+ * 职责：前置：规则命中表 + 会话历史累计给出风险等级（冲突时就高不就低）；
+ *      后置：检查模型输出是否越界（诊断 / 危险方法 / 保密承诺 / 永久承诺 / 亲昵称呼 / 提示词泄露）。
+ * 依赖：core/utils（normalizeText）
+ * 被依赖：pipeline/agents（checkOutputSafety）、chat/pipeline（checkInputSafety / checkOutputSafety）、tests/run.js（硬编码路径 src/safety.js）
+ * 改动风险：🔴 高 —— ⚠️ 冻结契约文件，路径被 tests/run.js 硬引用；改动必须跑红队
+ *      （node tests/run.js 期望 42/42 + 9/9；node eval/redteam/run-redteam.js 期望 20 条、红线硬命中 0）。
+ * 契约：RISK 常量、checkInputSafety(text, options) 与 checkOutputSafety(text) 的导出名与返回结构，
+ *      以及「L3 危机固定话术」这一行为 —— tests/run.js 按冻结命名严格判定。
+ * 不要做什么：
+ *   1) 不要移动或重命名本文件（tests/run.js 第 13/14/971 行一带硬编码 src/safety.js，移了测试直接挂）；
+ *   2) 不要放宽规则命中表或删掉组合式判定（实测漏报过的改写形式见文件内注释）。
+ */
+/**
  * 守岸人 · 安全边界（前置识别 + 后置检查）
  *
  * 前置：风险分级 L0 普通 / L1 关注 / L2 需转介 / L3 危机
@@ -6,9 +21,10 @@
  * 后置：输出越界检查（诊断 / 危险方法 / 保密承诺 / 永久承诺 / 亲昵称呼 / 提示词泄露）。
  *
  * 关于热线：一律不编造具体号码，只引导「可信任的人 / 学校心理中心 / 当地紧急服务」。
+ * 🔴 冻结契约文件：路径被 tests/run.js 硬引用，不随分层迁移。
  */
 
-const { normalizeText } = require('./utils');
+const { normalizeText } = require('./core/utils');
 
 const RISK = { L0: 'L0', L1: 'L1', L2: 'L2', L3: 'L3' };
 

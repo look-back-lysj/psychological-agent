@@ -1,3 +1,15 @@
+/**
+ * 模块：infra/llm —— 模型调用（OpenAI 兼容 /chat/completions + SSE）
+ * 层级：infra L2（外部调用）
+ * 职责：负责 callLLM / callLLMStream / testConnection：重试、超时看门狗、SSE 解析与错误码归类。
+ * 依赖：infra/config（getConfig）
+ * 被依赖：pipeline/agents、chat/pipeline、api/routes
+ * 改动风险：🟡 中 —— node --check + node tests/run.js
+ * 契约：callLLM(prompt, messages, opts) / callLLMStream(prompt, messages, {onDelta, signal}) 的签名与返回 {content, usage}
+ * 不要做什么：
+ *   1) 不要硬编码模型名（模型统一由 .env / config 提供）
+ *   2) 不要去掉超时看门狗与 AbortSignal 支持
+ */
 const { getConfig } = require('./config');
 
 // 流式调用的看门狗：首个数据块 / 两次数据块之间的最长等待，以及单次调用总上限

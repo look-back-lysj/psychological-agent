@@ -1,3 +1,15 @@
+/**
+ * 模块：core/utils —— 纯工具函数（文本清洗 / 归一化 / HMAC）
+ * 层级：core L0
+ * 职责：提供全项目共用的无副作用函数：sanitizeText 清洗与截断、normalizeText 归一化、truncate 截断、hmacSessionId 脱敏标识。
+ * 依赖：无（只用 Node 内置 crypto）
+ * 被依赖：被 7 个模块依赖：pipeline/agents、chat 的编排、infra/comeback、core/logger、infra/memory、safety、strategy
+ * 改动风险：🟢 低 —— node --check + node tests/run.js（normalizeText 口径同时影响安全判定与记忆去重）
+ * 契约：sanitizeText / normalizeText / truncate / hmacSessionId 的导出名与语义
+ * 不要做什么：
+ *   1) 改 normalizeText 口径会同时影响安全判定与记忆去重，必须跑全量测试
+ *   2) 不要在这里引入任何 fs / 网络调用
+ */
 const { createHmac } = require('crypto');
 
 /**

@@ -1,4 +1,16 @@
 /**
+ * 模块：pipeline/agents —— 多智能体内核（观 / 校 / 档位 / 策略裁决）
+ * 层级：pipeline L3（装配）
+ * 职责：实现 appraise（观）、review（校）、decideTier、localScreen、resolveStrategy、fallbackPlan 与结果缓存。
+ * 依赖：infra/llm（callLLM）、strategy（STRATEGY_META）、core/utils、safety（checkOutputSafety）
+ * 被依赖：chat/pipeline
+ * 改动风险：🟡 中 —— node --check + node tests/run.js
+ * 契约：AGENT_VERSION、appraise / review / decideTier / localScreen / resolveStrategy / fallbackPlan / getCachedPlan / isSafetyIssue / isSafetyDraft 的导出名与返回字段
+ * 不要做什么：
+ *   1) 不要把「校」当成安全兜底（安全兜底是 chat/pipeline 每轮都跑的 checkOutputSafety）
+ *   2) 不要改 callLLM(prompt, messages) 的调用契约
+ */
+/**
  * 守岸人 · 多智能体内核
  *
  * 一轮对话的内部流水线（在规则层之后）：
@@ -27,10 +39,10 @@
  *   「校」不是安全兜底：安全兜底是 chat.js 里每一轮都跑的 checkOutputSafety()。
  */
 
-const { callLLM } = require('./llm');
-const { STRATEGY_META } = require('./strategy');
-const { normalizeText } = require('./utils');
-const { checkOutputSafety } = require('./safety');
+const { callLLM } = require('../infra/llm');
+const { STRATEGY_META } = require('../strategy');
+const { normalizeText } = require('../core/utils');
+const { checkOutputSafety } = require('../safety');
 
 // v3.2：①「校」明确为「仅本地命中才调用、且只做重写」；②补两条 L0 低信息量跳过「观」的条件
 //       （去标点后为空 / 同一字符重复 ≤12 字）；③新增 isSafetyIssue() 供调用点标注安全类命中。

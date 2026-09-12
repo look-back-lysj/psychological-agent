@@ -1,4 +1,20 @@
 /**
+ * 模块：strategy —— 沟通策略路由 S0—S6
+ * 层级：冻结契约（留在 src/ 顶层，不随分层迁移）
+ * 职责：用规则打分 + 会话状态约束选策略（S0 危机 / S1 倾听 / S2 共情 / S3 澄清 /
+ *      S4 正常化 / S5 小行动 / S6 转介），并维护「开口引导阶梯」ENGAGE_LADDER。
+ * 依赖：core/utils（normalizeText）
+ * 被依赖：pipeline/prompts（ENGAGE_LADDER，同源）、pipeline/agents（STRATEGY_META）、
+ *      chat/pipeline（chooseStrategy 等）、infra/sessions（createSessionState）、tests/run.js（硬编码路径）
+ * 改动风险：🔴 高 —— ⚠️ 冻结契约文件，路径被 tests/run.js 硬引用；改动必须跑红队
+ *      （node tests/run.js 期望 42/42 + 9/9）。
+ * 契约：策略键集 S0_crisis…S6_referral、STRATEGY_META、ENGAGE_LADDER，
+ *      以及 chooseStrategy / updateSessionState / buildRoute / updateEngageLadder / createSessionState 的导出名。
+ * 不要做什么：
+ *   1) 不要移动或重命名本文件（tests/run.js 第 13/14/972 行一带硬编码 src/strategy.js，移了测试直接挂）；
+ *   2) 改 ENGAGE_LADDER 的判定信号必须同步 pipeline/prompts.js（同源，串行改），否则阶梯文案与判定信号会打架。
+ */
+/**
  * 守岸人 · 沟通策略路由（Stage 2）
  *
  * 策略库：S0 危机安全 / S1 陪伴性倾听 / S2 共情反映 / S3 澄清提问
@@ -8,9 +24,10 @@
  * - 策略库写死在代码里，不交给模型临场发挥；
  * - 规则打分 + 会话状态约束（避免连续同策略、避免逼问、每 4—5 轮小收束）；
  * - 输出可解释 JSON（风险等级 / 策略 / 置信度 / 依据 / 追问计数 / 情绪温度）。
+ * 🔴 冻结契约文件：路径被 tests/run.js 硬引用，不随分层迁移。
  */
 
-const { normalizeText } = require('./utils');
+const { normalizeText } = require('./core/utils');
 
 const RISK_LEVELS = ['L0', 'L1', 'L2', 'L3'];
 

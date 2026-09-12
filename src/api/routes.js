@@ -1,4 +1,16 @@
 /**
+ * 模块：api/routes —— 管理接口（config / memory / comeback / sessions）
+ * 层级：api L4（对外接口）
+ * 职责：提供 /api/config、/api/memory、/api/comeback、/api/sessions 的读写路由，是前端设置面板与记忆面板的后端。
+ * 依赖：infra/config、infra/memory、infra/sessions、infra/llm、infra/comeback
+ * 被依赖：server.js（app.use 四个 router）
+ * 改动风险：🔴 高 —— node --check + node tests/run.js（42/42 + 9/9）+ 启动冒烟
+ * 契约：configRouter / memoryRouter / comebackRouter / sessionsRouter 的导出名与各端点的响应形状
+ * 不要做什么：
+ *   1) 不要改响应字段名（前端 public/app.js 的 fetch 形状与之双边绑定，要改必须两边同步）
+ *   2) 不要在响应里返回未脱敏的 API Key
+ */
+/**
  * 守岸人 · 管理接口
  * - /api/config    本地模型配置（DeepSeek Key、模型、温度）读写与连通性自检
  * - /api/memory    长期记忆的查看 / 新增 / 编辑 / 删除 / 清空 / 开关
@@ -9,11 +21,11 @@
  */
 
 const express = require('express');
-const config = require('./config');
-const memory = require('./memory');
-const sessions = require('./sessions');
-const { testConnection } = require('./llm');
-const { getComeback } = require('./comeback');
+const config = require('../infra/config');
+const memory = require('../infra/memory');
+const sessions = require('../infra/sessions');
+const { testConnection } = require('../infra/llm');
+const { getComeback } = require('../infra/comeback');
 
 // ── 配置 ────────────────────────────────────────────────────────
 const configRouter = express.Router();

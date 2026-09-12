@@ -33,7 +33,7 @@
 | 角色 | 负责范围 | 对应产物 |
 | --- | --- | --- |
 | 产品与设计 | 需求收敛、角色卡与语气规范、安全边界清单 | `docs/persona.md`、`docs/design.md` |
-| 后端与策略 | 策略路由、风险分级、长期记忆、模型接入 | `src/strategy.js`、`src/safety.js`、`src/memory.js`、`src/llm.js` |
+| 后端与策略 | 策略路由、风险分级、长期记忆、模型接入 | `src/strategy.js`、`src/safety.js`、`src/infra/memory.js`、`src/infra/llm.js` |
 | 前端与体验 | 聊天界面、多会话、向导、面板、桌面外壳 | `public/`、`src-tauri/` |
 | 评测与文档 | 用例集、评测脚本、A/B 对照、开发日志 | `tests/`、`eval/`、`docs/`、`devlog/` |
 

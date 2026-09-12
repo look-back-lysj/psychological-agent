@@ -1,4 +1,16 @@
 /**
+ * 模块：infra/sessions —— 会话内存 + 本地持久化（防抖落盘）
+ * 层级：infra L2（有状态 / 外部 IO）
+ * 职责：维护会话轮次、会话状态、风险历史与内在状态；800ms 防抖写 data/sessions.json，退出前可同步 flush。
+ * 依赖：core/paths（dataDir）、strategy（createSessionState）、domain/innerstate（createInnerState）
+ * 被依赖：server.js、chat/pipeline、chat/retry、chat/index、api/routes
+ * 改动风险：🟡 中 —— node --check + node tests/run.js
+ * 契约：ensureSession / addTurn / getHistory / getState / getRiskHistory / getInnerState / pushPendingTurn / countPendingTurns / drainPendingTurns / flush / sessions 的导出名
+ * 不要做什么：
+ *   1) 不要去掉 flush()（server.js 优雅退出依赖它同步落盘，否则最后几轮对话会丢）
+ *   2) 不要动 data/sessions.json 的字段名
+ */
+/**
  * 守岸人 · 会话内存 + 本地持久化（单机）
  *
  * 每个会话保存：最近若干轮对话转写、策略状态机状态、内在状态、风险历史、待抽取缓冲。
@@ -12,9 +24,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { dataDir } = require('./paths');
-const { createSessionState } = require('./strategy');
-const { createInnerState } = require('./innerstate');
+const { dataDir } = require('../core/paths');
+const { createSessionState } = require('../strategy');
+const { createInnerState } = require('../domain/innerstate');
 
 const MAX_TURNS = 8;                       // 送入模型的历史轮数上限（用户轮）
 const SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6 小时未活动即回收

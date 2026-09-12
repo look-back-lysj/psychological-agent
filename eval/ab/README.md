@@ -24,7 +24,7 @@
 | 变量 | A 组 | B 组 | 是否受控 |
 | --- | --- | --- | --- |
 | `XINYU_AGENTS` | `on`（观 → 策略裁决 → 书 → 校） | `off`（不跑「观」与「校」） | **唯一自变量** |
-| 人设 | `src/persona.js` | 同左 | ✅ 相同 |
+| 人设 | `src/domain/persona.js` | 同左 | ✅ 相同 |
 | 策略层 | `src/strategy.js`（S0—S6、风险分级） | 同左 | ✅ 相同 |
 | 安全层 | `src/safety.js`（L0—L3、输出越界检查、危机固定话术） | 同左 | ✅ 相同 |
 | 模型与参数 | 同一 `LLM_MODEL` / `temperature` / `max_tokens` / `thinking` | 同左 | ✅ 两实例读取同一组环境变量 |

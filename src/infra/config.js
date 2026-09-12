@@ -1,6 +1,18 @@
+/**
+ * 模块：infra/config —— 模型配置读写（Key 落本地、对外脱敏）
+ * 层级：infra L2（有状态 / 外部 IO）
+ * 职责：读写 data/config.json（白名单字段、0o600、原子写），合并环境变量；对外只暴露脱敏后的 getPublicConfig。
+ * 依赖：core/paths（dataDir）
+ * 被依赖：server.js、infra/llm、api/routes
+ * 改动风险：🟡 中 —— node --check + node tests/run.js
+ * 契约：getConfig / getPublicConfig / saveConfig 的导出名，以及对外只返回 keyMasked 的行为
+ * 不要做什么：
+ *   1) 绝对不许把真实 API Key 写进任何文件、日志或返回值（对外只许 keyMasked）
+ *   2) 不要放宽保存字段白名单或文件权限 0o600
+ */
 const fs = require('fs');
 const path = require('path');
-const { dataDir } = require('./paths');
+const { dataDir } = require('../core/paths');
 
 // 配置文件固定为 data/config.json（data/ 已在 .gitignore，绝不入库）
 // 打包成 exe 后快照目录只读，与 main.js / logger.js 保持一致，写到 exe 旁边

@@ -1,4 +1,16 @@
 /**
+ * 模块：pipeline/prompts —— 提示词组装（四段式：人设 + 策略 + 安全 + 记忆）
+ * 层级：pipeline L3（装配）
+ * 职责：把 persona 块、策略指令、安全块与召回记忆拼成 system prompt；维护 PROMPT_VERSION。
+ * 依赖：domain/persona（buildPersonaBlock / buildSafetyBlock / PERSONA_VERSION）、strategy（ENGAGE_LADDER，同源）
+ * 被依赖：server.js（/api/health 的 promptVersion）、chat/pipeline
+ * 改动风险：🟡 中 —— node --check + node tests/run.js
+ * 契约：buildSystemPrompt 的入参字段与 PROMPT_VERSION
+ * 不要做什么：
+ *   1) 不要另写一套阶梯判定规则（必须只读 strategy.js 的 ENGAGE_LADDER，保持单一事实来源）
+ *   2) 改策略指令文案时不要改动 strategy.js 的 ENGAGE_LADDER 信号（两边必须同源、串行改）
+ */
+/**
  * 守岸人 · 提示词组装（四段式）
  *
  * 第 1 段 角色与语气（恒定）
@@ -14,9 +26,9 @@
  *   「先反映、再决定要不要问」，与 S3 的「连问不超过 2 次」保持一致。
  */
 
-const { buildPersonaBlock, buildSafetyBlock, PERSONA_VERSION } = require('./persona');
+const { buildPersonaBlock, buildSafetyBlock, PERSONA_VERSION } = require('../domain/persona');
 // 阶梯的判定信号 / 失败模式以 src/strategy.js 的 ENGAGE_LADDER 为唯一来源，避免两套规则打架
-const { ENGAGE_LADDER } = require('./strategy');
+const { ENGAGE_LADDER } = require('../strategy');
 
 const PROMPT_VERSION = 'v3.0';
 const NL = String.fromCharCode(10);

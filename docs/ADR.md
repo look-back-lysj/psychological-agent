@@ -128,8 +128,8 @@
 | --- | --- | --- |
 | **DR-002** | **去掉网页版，只保留桌面版** | `devlog/day14.md`「一、按你的要求去掉网页版」；`main.js:82-85`（`OPEN_BROWSER=1` 才打开调试通道）；`build.js:50-52`（不再生成「启动守岸人.bat」）；`docs/操作手册.md` 与 `submit-checklist.md` 的相应改动。关键取舍：**保留 Express 后端与 `public/`**（Tauri 外壳本身就是 WebView 加载本地服务，删了后端桌面版也跑不了）；保留 `OPEN_BROWSER=1` 作为显式调试通道 |
 | **DR-003** | **只做「装了 API」的版本，不做无 Key 演示模式** | `devlog/day09.md`（「移除无 Key 演示模式改为引导配置」）、`devlog/day11.md`（「演示模式会复活」+ 删除 `src/demo.js`）、`docs/upgrade-plan-v3.md` 的 P0-5（`src/demo.js` 的 `isDemoEnabled()` **默认返回 `true`**，是「悬在头上的刀」）。用户偏好原文：**未配置 API 时应引导用户如何安装/配置 API，而不是提供演示或本地脚本回复** |
-| **DR-004** | **记忆默认关闭 + 关闭时清空（PIPL 合规）** | `src/memory.js:emptyStore`（默认 `enabled:false`，注释引用 PIPL 第 29 条「单独同意」）、`devlog/day12.md`「四、隐私合规闭环」（`setEnabled(false)` 同时清空，依 PIPL 第 47 条）、`docs/upgrade-plan-v3.md` §3.4 的 PIPL 第 72 条讨论（「自然人因个人或者家庭事务处理个人信息的，不适用本法」→ 制度性义务大幅减轻，但**第三方传输环节必须诚实告知**）。首启向导第 2 步为记忆同意（默认不勾选） |
-| **DR-005** | **人设「守望」反转为「你随时可以来，也可以不来」** | 核心冲突：「永久守望 / 承诺保守秘密」的人设内核与「不承诺保密、不诱导依赖」的硬边界**直接冲突**。处理方式：把「守望」反转为「你随时可以来，也可以不来」。相关实现见 `src/persona.js` 的 `IDENTITY` 与 `FORBIDDEN_STYLE`（「我会一直在」「我永远陪着你」在禁用清单里）、`src/agents.js:AI_CLICHE`、`src/safety.js` 的 `OUTPUT_BLOCK_PATTERNS`（永久承诺 / 亲昵称呼）。素材另见 `docs/persona.md`、`docs/design.md` |
+| **DR-004** | **记忆默认关闭 + 关闭时清空（PIPL 合规）** | `src/infra/memory.js:emptyStore`（默认 `enabled:false`，注释引用 PIPL 第 29 条「单独同意」）、`devlog/day12.md`「四、隐私合规闭环」（`setEnabled(false)` 同时清空，依 PIPL 第 47 条）、`docs/upgrade-plan-v3.md` §3.4 的 PIPL 第 72 条讨论（「自然人因个人或者家庭事务处理个人信息的，不适用本法」→ 制度性义务大幅减轻，但**第三方传输环节必须诚实告知**）。首启向导第 2 步为记忆同意（默认不勾选） |
+| **DR-005** | **人设「守望」反转为「你随时可以来，也可以不来」** | 核心冲突：「永久守望 / 承诺保守秘密」的人设内核与「不承诺保密、不诱导依赖」的硬边界**直接冲突**。处理方式：把「守望」反转为「你随时可以来，也可以不来」。相关实现见 `src/domain/persona.js` 的 `IDENTITY` 与 `FORBIDDEN_STYLE`（「我会一直在」「我永远陪着你」在禁用清单里）、`src/pipeline/agents.js:AI_CLICHE`、`src/safety.js` 的 `OUTPUT_BLOCK_PATTERNS`（永久承诺 / 亲昵称呼）。素材另见 `docs/persona.md`、`docs/design.md` |
 | **DR-006** | **不做自动更新（updater）** | `docs/upgrade-plan-v3.md` §3.6：「**自动更新（updater）本周期砍掉**：Tauri 的更新签名**不可关闭**，私钥丢失会让老用户永久无法更新，对比赛项目是纯负担」。同节还一并砍掉了「托盘常驻 / 开机自启」（与「不诱导依赖」的产品边界冲突）与「自绘标题栏」（已改回系统原生 `decorations: true`） |
 | **DR-007** | **打包目标锁定 `node22-win-x64`** | `package.json` 的 `"build"` script：`pkg main.js --targets node22-win-x64 --output dist/守岸人/守岸人.exe --compress GZip`。理由：pkg-fetch 只提供 node22/24/26 预编译基座，**node20 会回退源码编译并因缺 NASM 失败**（这是之前打包卡住的真正原因）。相关背景另见 `docs/upgrade-plan-v3.md` P0-6（`better-sqlite3` 原生模块 pkg 打不进快照） |
 | **DR-008** | **`logs/` 的交付与 gitignore 取舍** | 冲突：`logs/` 会含运行期原文，因此默认应 gitignore；但「**真实调用记录**」与「**成本台账**」是《验收清单》的硬性交付物，而 `logs/` 正是它们的位置。现行做法：`.gitignore` 整体排除 `logs/` + 用 `!` 白名单放行三个文件 —— `!logs/usage_summary.md`、`!logs/calls.sample.jsonl`、`!logs/README.md`。⚠️ 待补事实：`logs/README.md` 实测为 **0 字节空文件**；且曾出现「`logs/` 被整体 gitignore 导致交付物无法入库」的问题（正在修）。另见 `build.js:38-43`（**只附带脱敏样例日志，绝不打包真实运行日志**） |
@@ -138,11 +138,11 @@
 
 | 编号（建议） | 主题 | 素材出处 |
 | --- | --- | --- |
-| DR-009（可选） | **规则层独占 S0/S6、模型只在 S1—S5 微调** | `src/agents.js:MODEL_TUNABLE` 与 `resolveStrategy`；`src/upgrade-plan-v3.md` §3.5 架构决策表的「规则层 L0–L3 + S0/S6 + 固定危机话术 **保留**（永远第一层）」。这条很可能已经满足「写进不能违反清单」的触发条件，值得单独成条 |
-| DR-010（可选） | **输出后置检查：先完整取回再下发** | `src/chat.js` 流式路由的 `onDelta` 只累积不转发（`:626` 注释）；`checkOutputSafety` 无条件每轮执行（`devlog/day12.md` 的「安全底线」一条实测确认） |
+| DR-009（可选） | **规则层独占 S0/S6、模型只在 S1—S5 微调** | `src/pipeline/agents.js:MODEL_TUNABLE` 与 `resolveStrategy`；`src/upgrade-plan-v3.md` §3.5 架构决策表的「规则层 L0–L3 + S0/S6 + 固定危机话术 **保留**（永远第一层）」。这条很可能已经满足「写进不能违反清单」的触发条件，值得单独成条 |
+| DR-010（可选） | **输出后置检查：先完整取回再下发** | `src/chat/` 流式路由的 `onDelta` 只累积不转发（`:626` 注释）；`checkOutputSafety` 无条件每轮执行（`devlog/day12.md` 的「安全底线」一条实测确认） |
 | DR-011（可选） | **安全判定用本地规则，不用模型自评** | `docs/upgrade-plan-v3.md` §3.5 架构决策表：「让模型自评『是否越界』**不采用**——本地正则/词典更快更准更省，且**可回归测试**」 |
 | DR-012（可选） | **记忆存储用本地 JSON，不引 SQLite** | `docs/upgrade-plan-v3.md` §3.4「工程阈值：本机实测数据」（1000 条 / 360 KB → 5 ms；5000 条 / 1.8 MB → 16 ms；10000 条 / 3.6 MB → 33 ms）与「换 SQLite 的触发条件（任一）：① 开始存原始对话轮次；② 需要按时间区间做查询；③ 单文件 >2 MB 或条目 >2000；④ 需要事务保证多次写不丢」。**注意**：若将来真要换，用 **Node 24 内置 `node:sqlite`**（零原生依赖，解决 P0-6 的打包问题） |
-| DR-013（可选） | **用户数据的可写目录策略（exe 旁优先，失败回退 `%APPDATA%`）** | `src/paths.js`（`dataDir()` / `logDir()` / `canWrite()`，`XINYU_DATA_DIR` 可强制）。触发事件：pkg / Tauri sidecar 打包后 `__dirname` 指向只读快照 |
+| DR-013（可选） | **用户数据的可写目录策略（exe 旁优先，失败回退 `%APPDATA%`）** | `src/core/paths.js`（`dataDir()` / `logDir()` / `canWrite()`，`XINYU_DATA_DIR` 可强制）。触发事件：pkg / Tauri sidecar 打包后 `__dirname` 指向只读快照 |
 
 ---
 

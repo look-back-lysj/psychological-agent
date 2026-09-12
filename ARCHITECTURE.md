@@ -15,40 +15,43 @@ Node.js(Express 5) 后端 + 原生 HTML/CSS/JS 前端（**前端零依赖**）+ 
 ### 入口链路（一行）
 
 ```
-main.js  →  src/routes.js  →  src/chat.js
+src/server.js  →  src/api/routes.js  →  src/chat/index.js
 （起服务、挂 API）（管理接口）   （对话主链路，SSE 流式）
 ```
 
-- `main.js` 是**唯一进程入口**（130 行），负责：加载 `.env` → 静态目录 → 挂 5 个路由 → `app.listen('127.0.0.1')` → SIGTERM 优雅退出。
-- `src/index.js` 是 **4 行薄别名**：`require('../main.js')`，存在的唯一理由是兼容旧命令 `node src/index.js`。
-- `require('./src/chat')` 的返回值 **就是 Express Router**（不是 `{router}` 包装对象），另外挂了两个函数属性 `flushPendingExtraction` / `extractNow`，供 `main.js` 退出前补抽记忆。
-  ⚠️ 注意：`src/index.js` 顶部注释仍写着「若不希望自动打开浏览器，可设置环境变量 NO_BROWSER=1」，这是**已过时的说法**——现在默认就不打开浏览器，只有 `OPEN_BROWSER=1` 才打开（见 `main.js:82-85`）。
+- **入口有两个文件**：根目录 `main.js` 是 3 行薄转发（只是 `require('./src/server.js')`，为保住 `package.json` 的 `"main"`/`"start"`、pkg 打包入口与既有文档），`src/server.js` 才是**真正实现**（负责：加载 `.env` → 定位 `public/` → 挂 5 个路由 → `app.listen('127.0.0.1')` → SIGTERM 优雅退出）。
+- `src/index.js` 是 **3 行薄别名**：`require('./server.js')`，存在的唯一理由是兼容旧命令 `node src/index.js`。
+- `require('./chat')`（即 `src/chat/index.js`）的返回值 **就是 Express Router**（不是 `{router}` 包装对象），另外挂了两个函数属性 `flushPendingExtraction` / `extractNow`，供 `src/server.js` 退出前补抽记忆。
+  ⚠️ 注意：`src/index.js` 顶部注释仍写着「若不希望自动打开浏览器，可设置环境变量 NO_BROWSER=1」，这是**已过时的说法**——现在默认就不打开浏览器，只有 `OPEN_BROWSER=1` 才打开（见 `src/server.js:82-85`）。
 
 ### 分层图（依赖方向自上而下，**箭头表示「被依赖」**）
 
 ```
-        ┌─────────────────────────────────────────────┐
-  L4    │  chat          (对话主链路 · 690 行)         │  依赖 11 个模块
-        └───────────────────────┬─────────────────────┘
-                                │
-        ┌───────────────────────▼─────────────────────┐
-  L3    │  agents (525)              routes (143)     │
-        └───────────────────────┬─────────────────────┘
-                                │
-        ┌───────────────────────▼─────────────────────┐
-  L2    │  comeback(319) llm(377) prompts(369) sessions(361) │
-        └───────────────────────┬─────────────────────┘
-                                │
-        ┌───────────────────────▼─────────────────────┐
-  L1    │  config(245) logger(41) memory(951) safety(327) strategy(400) │
-        └───────────────────────┬─────────────────────┘
-                                │
-        ┌───────────────────────▼─────────────────────┐
-  L0    │  utils(55)  paths(56)  persona(324)  innerstate(132)  index(4) │
-        └─────────────────────────────────────────────┘
+  入口   │  main.js（3 行薄转发）→ src/server.js（144 行，装配路由 + 优雅退出）
+         │  src/index.js（薄别名，兼容 node src/index.js）
+         └───────────────────────────────┬───────────────────────────────┘
+                                         │
+        ┌────────────────────────────────▼────────────────────────────────┐
+  L4    │  chat/   index(169) pipeline(396) extractor(116) http(82) retry(72) │
+        │          api/routes.js(155)                                          │
+        └────────────────────────────────┬────────────────────────────────┘
+                                         │
+        ┌────────────────────────────────▼────────────────────────────────┐
+  L3    │  pipeline/  agents(537)  prompts(381)                               │
+        └────────────────────────────────┬────────────────────────────────┘
+                                         │
+        ┌────────────────────────────────▼────────────────────────────────┐
+  L2    │  infra/  config(257) llm(389) memory(963) sessions(373) comeback(331)│
+        │  （顶层，不迁移）safety.js(343)  strategy.js(417)                    │
+        └────────────────────────────────┬────────────────────────────────┘
+                                         │
+        ┌────────────────────────────────▼────────────────────────────────┐
+  L0/L1 │  core/  utils(67) paths(68) logger(53)                              │
+        │  domain/ persona(336) innerstate(144)                               │
+        └────────────────────────────────────────────────────────────────────┘
 ```
 
-以上 17 个 `src/*.js`、5 层、**无循环依赖**，均由 `node _tmp/dep-graph.js` 实测得到：
+以上 22 个 `src/**/*.js`、7 层（含入口）、**无反向依赖与循环依赖**，均由 `node _tmp/dep-graph.js` 实测得到：
 
 ```bash
 node _tmp/dep-graph.js          # 打印依赖图 + 分层
@@ -75,26 +78,26 @@ node _tmp/dep-graph.js --check  # 只检查环，有环退出码非 0
 | # | 步骤 | 文件:函数 | 调模型 | 失败兜底 |
 | --- | --- | --- | --- | --- |
 | ① | 前端 `fetch` POST `/api/chat/stream`，body `{message, sessionId, retry?}` | `public/app.js`（SSE 手动解析，`EventSource` 不支持 POST） | 否 | 流中断自动降级到非流式 `POST /api/chat` |
-| ② | 清洗输入、生成/复用 `sessionId`、`ensureSession`、给**上一个**会话补抽记忆 | `src/chat.js:prepareTurn` → `sanitizeText` | 否 | 空消息 → `400 {ok:false,error:'消息不能为空。'}` |
-| ③ | 「重新生成」去重：命中末尾同一轮则**删掉旧助手回复**，保留用户消息 | `src/chat.js:dedupeRetryTurns` | 否 | 找不到 / 后面还有更多轮 / 抛异常 → `fallback_normal`，按普通请求处理 |
+| ② | 清洗输入、生成/复用 `sessionId`、`ensureSession`、给**上一个**会话补抽记忆 | `src/chat/index.js:prepareTurn` → `sanitizeText` | 否 | 空消息 → `400 {ok:false,error:'消息不能为空。'}` |
+| ③ | 「重新生成」去重：命中末尾同一轮则**删掉旧助手回复**，保留用户消息 | `src/chat/index.js:dedupeRetryTurns` | 否 | 找不到 / 后面还有更多轮 / 抛异常 → `fallback_normal`，按普通请求处理 |
 | ④ | **前置安全分级** L0/L1/L2/L3（规则表 + 会话风险历史累计，**就高不就低**） | `src/safety.js:checkInputSafety` | 否 | 任何异常由调用方捕获；风险等级「未知」也不阻断回复 |
 | ⑤ | **策略路由**：先推进/退回「开口引导阶梯」，再打分选 S0—S6 | `src/strategy.js:updateEngageLadder` + `chooseStrategy` | 否 | 打分无命中 → 默认 `S1_listen` |
 | ⑥ | 生成**可解释路由 JSON**（写日志 / 调试面板） | `src/strategy.js:buildRoute` | 否 | 字段逐个取默认值，不会抛 |
-| ⑦ | 「记住……」/「忘掉……」显式指令：**直接落库**，不进模型 | `src/chat.js:handleExplicitMemory` | 否 | 异常静默，返回 `null`，照常走模型 |
-| ⑧ | **L3 危机：固定话术，结构性跳过模型**（在档位判定**之前** return） | `src/chat.js:generateReply` 开头 `if (riskLevel === 'L3')` | **否** | 用 `inputSafety.meta.reply`，缺失则用 `CRISIS_FALLBACK` 常量 |
-| ⑨ | 档位判定 `minimal` / `standard`；`minimal` 在**「观」之前**就 return 简化路径 | `src/agents.js:decideTier` → `src/chat.js:decideTierSafe` | 否 | 任何异常 → `standard`（现有行为，绝不多花钱也不改变语义） |
-| ⑩ | 召回长期记忆（≤6 条）+ 取会话内在状态 | `src/memory.js:retrieveMemories` / `src/chat.js:collectMemories` | 否 | 任何异常返回 `[]`，**绝不影响主链路** |
-| ⑪ | **「观」**：感知情绪 + 定调，返回 `plan`（含 `strategyHint` / `askQuestion`） | `src/agents.js:appraise`（可命中 `getCachedPlan` 缓存） | **是**（1 次短调用；`XINYU_AGENTS=off` 或 minimal 档则跳过） | `plan=null` → `fallbackPlan()` 兜底；再不行 → `askQuestion:null` 的保守计划 |
-| ⑫ | **策略裁决**：规则层独占 S0/S6，模型只能在 S1—S5 之间微调 | `src/agents.js:resolveStrategy` | 否 | 不可微调 → 原样保留规则层策略 |
-| ⑬ | 更新内在状态 → 转成**表达约束**（句长上限、提问概率） | `src/innerstate.js:updateInnerState` + `replyShape` | 否 | `shape` 为空则 `localScreen` 用默认 `maxChars=140` |
-| ⑭ | 组装 system prompt（四段式：人设 / 策略 / 安全 / 记忆 + 输出要求） | `src/prompts.js:buildSystemPrompt` | 否 | — |
-| ⑮ | **「书」**：调模型生成回复（流式路径只**累积**，不转发） | `src/llm.js:callLLMStream`（`chat.js:generateReply` 传入 `onDelta` 仅累积） | **是** | 错误码映射为中文提示（`model_auth`/`model_balance`/…）→ 走 `ERROR_FALLBACK` |
-| ⑯ | **本地快检**：长度 / 问号数 / AI 腔套话 / 安全草稿 | `src/agents.js:localScreen` + `isSafetyIssue` + `isSafetyDraft` | 否 | 空文本 → `['empty']` |
-| ⑰ | **「校」**：**只有 ⑯ 命中了才真调**，职责是「直接重写」而非输出评审意见 | `src/agents.js:review` | **是**（条件触发；命中则档位升为 `reviewed`） | `rv.degraded` 返回原稿也无妨——**安全兜底不依赖「校」** |
+| ⑦ | 「记住……」/「忘掉……」显式指令：**直接落库**，不进模型 | `src/chat/index.js:handleExplicitMemory` | 否 | 异常静默，返回 `null`，照常走模型 |
+| ⑧ | **L3 危机：固定话术，结构性跳过模型**（在档位判定**之前** return） | `src/chat/index.js:generateReply` 开头 `if (riskLevel === 'L3')` | **否** | 用 `inputSafety.meta.reply`，缺失则用 `CRISIS_FALLBACK` 常量 |
+| ⑨ | 档位判定 `minimal` / `standard`；`minimal` 在**「观」之前**就 return 简化路径 | `src/pipeline/agents.js:decideTier` → `src/chat/index.js:decideTierSafe` | 否 | 任何异常 → `standard`（现有行为，绝不多花钱也不改变语义） |
+| ⑩ | 召回长期记忆（≤6 条）+ 取会话内在状态 | `src/infra/memory.js:retrieveMemories` / `src/chat/index.js:collectMemories` | 否 | 任何异常返回 `[]`，**绝不影响主链路** |
+| ⑪ | **「观」**：感知情绪 + 定调，返回 `plan`（含 `strategyHint` / `askQuestion`） | `src/pipeline/agents.js:appraise`（可命中 `getCachedPlan` 缓存） | **是**（1 次短调用；`XINYU_AGENTS=off` 或 minimal 档则跳过） | `plan=null` → `fallbackPlan()` 兜底；再不行 → `askQuestion:null` 的保守计划 |
+| ⑫ | **策略裁决**：规则层独占 S0/S6，模型只能在 S1—S5 之间微调 | `src/pipeline/agents.js:resolveStrategy` | 否 | 不可微调 → 原样保留规则层策略 |
+| ⑬ | 更新内在状态 → 转成**表达约束**（句长上限、提问概率） | `src/domain/innerstate.js:updateInnerState` + `replyShape` | 否 | `shape` 为空则 `localScreen` 用默认 `maxChars=140` |
+| ⑭ | 组装 system prompt（四段式：人设 / 策略 / 安全 / 记忆 + 输出要求） | `src/pipeline/prompts.js:buildSystemPrompt` | 否 | — |
+| ⑮ | **「书」**：调模型生成回复（流式路径只**累积**，不转发） | `src/infra/llm.js:callLLMStream`（`chat.js:generateReply` 传入 `onDelta` 仅累积） | **是** | 错误码映射为中文提示（`model_auth`/`model_balance`/…）→ 走 `ERROR_FALLBACK` |
+| ⑯ | **本地快检**：长度 / 问号数 / AI 腔套话 / 安全草稿 | `src/pipeline/agents.js:localScreen` + `isSafetyIssue` + `isSafetyDraft` | 否 | 空文本 → `['empty']` |
+| ⑰ | **「校」**：**只有 ⑯ 命中了才真调**，职责是「直接重写」而非输出评审意见 | `src/pipeline/agents.js:review` | **是**（条件触发；命中则档位升为 `reviewed`） | `rv.degraded` 返回原稿也无妨——**安全兜底不依赖「校」** |
 | ⑱ | **输出后置检查**：诊断 / 危险方法 / 保密承诺 / 永久承诺 / 亲昵称呼 / 提示词泄露 | `src/safety.js:checkOutputSafety` | 否 | 命中 → `blocked:true`，回复换成 `outputCheck.fallback` |
-| ⑲ | **先完整取回再下发**：确认不 `blocked` 才分段写 SSE `delta`；`blocked` 则发 `replace` 事件 | `src/chat.js` 流式路由 `streamText` / `send('replace',…)` | 否 | 客户端已断开（`res.on('close')`）→ `AbortController.abort()`，不再写 |
-| ⑳ | 收尾：写会话、更新状态、**脱敏日志**、排后台抽记忆 | `src/chat.js:finalizeTurn` | 否 | 日志写失败只 `console.error`，不中断服务 |
-| ㉑ | **后台异步抽取长期记忆**（攒够 3 轮才抽，不阻塞回复） | `src/chat.js:scheduleMemoryExtraction` → `src/memory.js:extractFromTurn` | **是**（后台，1 次 JSON 调用） | 任何失败 `.catch(()=>{})` 静默；进程退出时由 `main.js` 的 1.5s 超时窗口尽力补抽 |
+| ⑲ | **先完整取回再下发**：确认不 `blocked` 才分段写 SSE `delta`；`blocked` 则发 `replace` 事件 | `src/chat/index.js` 流式路由 `streamText` / `send('replace',…)` | 否 | 客户端已断开（`res.on('close')`）→ `AbortController.abort()`，不再写 |
+| ⑳ | 收尾：写会话、更新状态、**脱敏日志**、排后台抽记忆 | `src/chat/index.js:finalizeTurn` | 否 | 日志写失败只 `console.error`，不中断服务 |
+| ㉑ | **后台异步抽取长期记忆**（攒够 3 轮才抽，不阻塞回复） | `src/chat/index.js:scheduleMemoryExtraction` → `src/infra/memory.js:extractFromTurn` | **是**（后台，1 次 JSON 调用） | 任何失败 `.catch(()=>{})` 静默；进程退出时由 `src/server.js` 的 1.5s 超时窗口尽力补抽 |
 
 ### 这一步为什么重要（三条容易搞错的点）
 
@@ -103,43 +106,43 @@ node _tmp/dep-graph.js --check  # 只检查环，有环退出码非 0
    所以 L3 从根本上进不了任何模型调用分支。**未配置 API Key 时危机协议依然可用**（它本来就不调模型）——
    这一点在 day14 用 Node 实测过（`curl` 传中文不可靠，见 AGENTS.md）。
 2. **「先完整取回，再做输出检查，再下发」**。
-   流式调用传的 `onDelta` 是**空函数**（`chat.js:626` 注释写得很直白：「只累积，不转发，避免越界内容闪现」）。
+   流式调用传的 `onDelta` 是**空函数**（`src/chat/index.js` 的注释写得很直白：「只累积，不转发，避免越界内容闪现」）。
    违规文本到达前端的**字节数必须是 0**——这是硬约束，不是优化。
 3. **记忆抽取是后台异步的**，且**攒够 3 轮**（`EXTRACT_EVERY_TURNS = 3`）才触发，刻意比 Mem0「每对消息」更省额度。
-   会话切换时会补抽上一个会话（`noteActiveSession`）；进程退出时 `main.js` 会等 1.5 秒补抽，超时就放弃——**绝不让退出卡住**。
+   会话切换时会补抽上一个会话（`noteActiveSession`）；进程退出时 `src/server.js` 会等 1.5 秒补抽，超时就放弃——**绝不让退出卡住**。
 
 ### 非流式路径的差异
 
-`POST /api/chat`（`src/chat.js:509`）逻辑一致，差别只有：不写 SSE、异常时**也返回 HTTP 200 + `ERROR_FALLBACK`**
+`POST /api/chat/`（`src/chat/index.js` 的 `router.post('/')`）逻辑一致，差别只有：不写 SSE、异常时**也返回 HTTP 200 + `ERROR_FALLBACK`**
 （不让前端卡在「正在回复…」），并在 `data.error` 里给可读原因（`friendlyMessage`）。
 
 ---
 
 ## 2. 模块职责表
 
-### 2.1 后端 `src/*.js`（17 个）
+### 2.1 后端 `src/**/*.js`（22 个：core 3 / domain 2 / infra 5 / pipeline 2 / chat 5 / api 1 / 顶层 2 / 入口 2）
 
 「改动风险」列口径：**R0 最低（改它基本不会波及别人）→ R6 最高（安全红线）**，与 AGENTS.md 的分级表一致。
 
 | 模块 | 行数 | 职责 | 依赖谁 | 被谁依赖 | 改动风险 |
 | --- | --- | --- | --- | --- | --- |
-| `utils.js` | 55 | 清洗 / 归一化（去空白零宽标点，防 `自 杀` 绕过）/ 脱敏 / 会话 ID HMAC / 截断 | — | **7 个**：chat, agents, memory, safety, strategy, logger, comeback | **R3**（被依赖最多，`normalizeText` 改口径会同时影响安全判定与记忆去重） |
-| `paths.js` | 56 | 可写数据目录解析（exe 旁 `data/` 优先，不可写退 `%APPDATA%\xinyu\data`；`XINYU_DATA_DIR` 可强制） | — | **5 个**：config, logger, memory, sessions, comeback | **R2**（改错会导致「数据写到只读快照里」→ 静默不落盘） |
-| `persona.js` | 324 | 人设层：身份 / 语气规则 / 禁用风格 / 对照反例 / 正例（随机抽 3—5 组）；导出 `PERSONA_VERSION='shouan-v3'` | — | prompts | **R4**（用户可见人格，改一句全站语气都变；`PERSONA_VERSION` 变更必须同步 README / 台账） |
-| `innerstate.js` | 132 | 会话级「内在状态」：心情 / 精力 / 熟悉度 → 句长上限与提问概率等表达约束 | — | sessions, chat | **R3**（`replyShape` 直接决定回复长度上限，改猛了会截断回复） |
-| `index.js` | 4 | 薄别名 `require('../main.js')` | — | — | **R1**（注释已过时，见速览 ⚠️） |
-| `config.js` | 245 | 本地模型配置读写：白名单字段 + 逐字段校验；优先级 `data/config.json` > 环境变量 > 默认值；`maskKey` 脱敏；文件 `mode 0o600` + 临时文件 rename 原子写 | paths | llm, routes | **R4**（涉及 API Key 落盘与脱敏，绝不能把 Key 带到响应/日志里） |
-| `logger.js` | 41 | 追加写 `logs/calls-YYYY-MM-DD.jsonl`；`sessionId` 只写 HMAC 哈希；**不写对话原文** | utils, paths | chat | **R2**（日志写失败只打印错误，不中断服务） |
-| `memory.js` | **951** | 长期记忆：抽取提示词 / 解析 / 冲突判定（先规则后 LLM）/ 打分召回 / 幂等衰减 / 接替链 / 淘汰策略 / 显式「记住/忘掉」/ 单独同意开关 | utils, paths | chat, routes, comeback | **R5**（项目最大单文件；默认 `enabled:false` 是合规底线，改默认值＝合规事故） |
-| `safety.js` | 327 | **前置**风险分级 L0—L3（整串 + 组合式判定）+ **后置**输出越界检查 | utils | chat, agents（+ `tests/run.js` **硬编码路径引用**） | **R6（最高）** 见下方 |
-| `strategy.js` | 400 | 策略路由 S0—S6：关键词打分 + 会话状态约束（不连续同策略、不逼问、每 4—5 轮小收束）；`ENGAGE_LADDER` 开口引导 6 级阶梯的**唯一事实来源** | utils | chat, agents, prompts, sessions（+ `tests/run.js` **硬编码路径引用**） | **R6（最高）** 见下方 |
-| `comeback.js` | 319 | 「回来」上下文（情感连续性）：首访 / 距上次多久 / 时段问候 / 记忆亮点 / 建议问题。**零模型调用**；`VISIT_GAP_MS`=30 分钟才算新一次来访 | paths, memory, utils | routes | **R3**（有 5 秒缓存 + 前端重复调用，`visitCount` 容易算错） |
-| `llm.js` | 377 | DeepSeek 调用（OpenAI 兼容 `/chat/completions`）：payload 组装 / SSE 解析 / 重试与退避（≤2 次、封顶 8s、读 `Retry-After` 且 >120s 放弃）/ 流式看门狗（空闲 15s、总 180s）/ 错误码 → 中文提示 | config | chat, agents, routes | **R4**（改重试或超时会直接影响「首字延迟」与费用） |
-| `prompts.js` | 369 | 四段式提示词组装；`STRATEGY_INSTRUCTIONS` 编号必须与 `strategy.js` 一致；`PROMPT_VERSION='v3.0'` | persona, strategy | chat | **R4**（改文案就是改产品；与 `strategy.js` 阶梯必须**同源**） |
-| `sessions.js` | 361 | 会话转写内存态 + 防抖落盘（800ms，临时文件 rename 原子替换）/ 上下文历史 / 会话状态 / `pendingTurns`（待抽记忆）/ 清空接口 | paths, strategy, innerstate | chat, routes | **R4**（落盘时序错 = 丢对话；`main.js` 退出前要 `flush()`） |
-| `agents.js` | 525 | 多 agent 流水线：`decideTier` 档位 / `appraise`「观」/ `resolveStrategy` 策略裁决 / `localScreen` 本地快检 / `review`「校」/ `fallbackPlan` 兜底；`AGENT_VERSION='v3.2'`；`XINYU_AGENTS=off` 关闭开关 | llm, strategy, utils, safety | chat | **R5**（`resolveStrategy` 是安全底线的一部分：S0/S6 绝不能被模型改） |
-| `routes.js` | 143 | 管理接口：`/api/config`（读写配置 + 连通性自检 + 清 Key）、`/api/memory`（增删改查/清空/开关）、`/api/comeback`、`/api/sessions`（清空） | config, memory, sessions, llm, comeback | main.js | **R4**（对外契约；`/api/memory` 的响应形状有文档引用） |
-| `chat.js` | **690** | 对话主链路：清洗 → 分级 → 路由 → 组装 → 调模型 → 后置检查 → 返回；SSE 与非流式两个端点；`flushPendingExtraction` 挂载 | utils, sessions, safety, strategy, prompts, persona, llm, memory, agents, innerstate, logger（**11 个**） | main.js | **R5**（依赖最多；`prepareTurn`/`generateReply`/`finalizeTurn` 三段是全局主流程） |
+| `core/utils.js` | 67 | 清洗 / 归一化（去空白零宽标点，防 `自 杀` 绕过）/ 脱敏 / 会话 ID HMAC / 截断 | — | **7 个**：chat, agents, memory, safety, strategy, logger, comeback | **R3**（被依赖最多，`normalizeText` 改口径会同时影响安全判定与记忆去重） |
+| `core/paths.js` | 70 | 可写数据目录解析（exe 旁 `data/` 优先，不可写退 `%APPDATA%\xinyu\data`；`XINYU_DATA_DIR` 可强制） | — | **5 个**：config, logger, memory, sessions, comeback | ⚠️ `appRoot()` 用 `path.join(__dirname, .., ..)` —— 本文件在 `src/core/`，距根两级，**改层级必须同步改这里**；**R2**（改错会导致「数据写到只读快照里」→ 静默不落盘） |
+| `domain/persona.js` | 336 | 人设层：身份 / 语气规则 / 禁用风格 / 对照反例 / 正例（随机抽 3—5 组）；导出 `PERSONA_VERSION='shouan-v3'` | — | prompts | **R4**（用户可见人格，改一句全站语气都变；`PERSONA_VERSION` 变更必须同步 README / 台账） |
+| `domain/innerstate.js` | 144 | 会话级「内在状态」：心情 / 精力 / 熟悉度 → 句长上限与提问概率等表达约束 | — | sessions, chat | **R3**（`replyShape` 直接决定回复长度上限，改猛了会截断回复） |
+| `index.js` | 15 | 薄别名 `require('./server.js')` | — | — | **R1**（注释已过时，见速览 ⚠️） |
+| `infra/config.js` | 257 | 本地模型配置读写：白名单字段 + 逐字段校验；优先级 `data/config.json` > 环境变量 > 默认值；`maskKey` 脱敏；文件 `mode 0o600` + 临时文件 rename 原子写 | paths | llm, routes | **R4**（涉及 API Key 落盘与脱敏，绝不能把 Key 带到响应/日志里） |
+| `core/logger.js` | 53 | 追加写 `logs/calls-YYYY-MM-DD.jsonl`；`sessionId` 只写 HMAC 哈希；**不写对话原文** | utils, paths | chat | **R2**（日志写失败只打印错误，不中断服务） |
+| `infra/memory.js` | **963** | 长期记忆：抽取提示词 / 解析 / 冲突判定（先规则后 LLM）/ 打分召回 / 幂等衰减 / 接替链 / 淘汰策略 / 显式「记住/忘掉」/ 单独同意开关 | utils, paths | chat, routes, comeback | **R5**（项目最大单文件；默认 `enabled:false` 是合规底线，改默认值＝合规事故） |
+| `safety.js`（顶层，不动） | 343 | **前置**风险分级 L0—L3（整串 + 组合式判定）+ **后置**输出越界检查 | utils | chat, agents（+ `tests/run.js` **硬编码路径引用**） | **R6（最高）** 见下方 |
+| `strategy.js`（顶层，不动） | 417 | 策略路由 S0—S6：关键词打分 + 会话状态约束（不连续同策略、不逼问、每 4—5 轮小收束）；`ENGAGE_LADDER` 开口引导 6 级阶梯的**唯一事实来源** | utils | chat, agents, prompts, sessions（+ `tests/run.js` **硬编码路径引用**） | **R6（最高）** 见下方 |
+| `infra/comeback.js` | 331 | 「回来」上下文（情感连续性）：首访 / 距上次多久 / 时段问候 / 记忆亮点 / 建议问题。**零模型调用**；`VISIT_GAP_MS`=30 分钟才算新一次来访 | paths, memory, utils | routes | **R3**（有 5 秒缓存 + 前端重复调用，`visitCount` 容易算错） |
+| `infra/llm.js` | 389 | DeepSeek 调用（OpenAI 兼容 `/chat/completions`）：payload 组装 / SSE 解析 / 重试与退避（≤2 次、封顶 8s、读 `Retry-After` 且 >120s 放弃）/ 流式看门狗（空闲 15s、总 180s）/ 错误码 → 中文提示 | config | chat, agents, routes | **R4**（改重试或超时会直接影响「首字延迟」与费用） |
+| `pipeline/prompts.js` | 381 | 四段式提示词组装；`STRATEGY_INSTRUCTIONS` 编号必须与 `strategy.js` 一致；`PROMPT_VERSION='v3.0'` | persona, strategy | chat | **R4**（改文案就是改产品；与 `strategy.js` 阶梯必须**同源**） |
+| `infra/sessions.js` | 373 | 会话转写内存态 + 防抖落盘（800ms，临时文件 rename 原子替换）/ 上下文历史 / 会话状态 / `pendingTurns`（待抽记忆）/ 清空接口 | paths, strategy, innerstate | chat, routes | **R4**（落盘时序错 = 丢对话；`src/server.js` 退出前要 `flush()`） |
+| `pipeline/agents.js` | 537 | 多 agent 流水线：`decideTier` 档位 / `appraise`「观」/ `resolveStrategy` 策略裁决 / `localScreen` 本地快检 / `review`「校」/ `fallbackPlan` 兜底；`AGENT_VERSION='v3.2'`；`XINYU_AGENTS=off` 关闭开关 | llm, strategy, utils, safety | chat | **R5**（`resolveStrategy` 是安全底线的一部分：S0/S6 绝不能被模型改） |
+| `api/routes.js` | 155 | 管理接口：`/api/config`（读写配置 + 连通性自检 + 清 Key）、`/api/memory`（增删改查/清空/开关）、`/api/comeback`、`/api/sessions`（清空） | config, memory, sessions, llm, comeback | server | **R4**（对外契约；`/api/memory` 的响应形状有文档引用） |
+| `chat/`（5 文件） | **835** | 对话主链路：清洗 → 分级 → 路由 → 组装 → 调模型 → 后置检查 → 返回；SSE 与非流式两个端点；`flushPendingExtraction` 挂载 | chat/pipeline（+ chat/index / chat/retry / chat/extractor / chat/http） | server | **R5**（依赖最多；`prepareTurn`/`generateReply`/`finalizeTurn` 三段是全局主流程） |
 
 **R6 说明（`safety.js` / `strategy.js`）**：这两个文件是全项目的安全底线，
 `tests/run.js` **硬编码引用它们的路径**（`src/safety.js` 与 `src/strategy.js`），
@@ -199,9 +202,9 @@ node _tmp/dep-graph.js --check  # 只检查环，有环退出码非 0
    - `strategy.js` 只许依赖 `utils.js`。
    > 一句话：**安全和策略的判定不许向上要数据**——它们必须能被 `tests/run.js` 单独 require 并跑完。
 4. **`prompts.js` 的阶梯文案必须与 `strategy.js` 的 `ENGAGE_LADDER` 同源**：
-   `prompts.js` 已 `require('./strategy')` 取 `ENGAGE_LADDER` 作为**单一事实来源**。
+   `pipeline/prompts.js` 已 `require('../strategy')` 取 `ENGAGE_LADDER` 作为**单一事实来源**。
    ⚠️ 于是 `strategy.js ↔ prompts.js` 存在一条真实的耦合边，**必须串行改**（见 AGENTS.md 并行分工约定）。
-5. **`main.js` 只做「挂载」**，不写业务逻辑。它 `require` 了 `chat` / `sessions` / `routes` / `config` / `persona` / `prompts`，
+5. **`src/server.js` 只做「挂载」**，不写业务逻辑。它 `require` 了 `chat` / `sessions` / `routes` / `config` / `persona` / `prompts`，
    但除了「起服务 + 收 SIGTERM 落盘」之外不介入任何判定。
 
 ---
@@ -214,19 +217,19 @@ node _tmp/dep-graph.js --check  # 只检查环，有环退出码非 0
 | 输出越界（诊断 / 剂量 / 保密 / 亲昵） | `src/safety.js:checkOutputSafety` 的 `OUTPUT_BLOCK_PATTERNS` | `npm test`（含输出侧扫描段）+ 红队 |
 | 策略选择逻辑（S0—S6 打分 / 状态约束） | `src/strategy.js`（`SIGNAL_RULES` / `chooseStrategy` / `updateSessionState`） | `npm test`（策略准确率 42/42）+ 红队 |
 | 开口引导 6 级阶梯的**判定信号** | `src/strategy.js:ENGAGE_LADDER` + `updateEngageLadder` | `npm test` + **手工多轮对话**（阶梯是跨轮的，单测覆盖不到） |
-| 开口引导阶梯的**文案** | `src/prompts.js:buildEngageBlock`（**自动读 `ENGAGE_LADDER`，改文案不改信号**） | `npm test`；若同时改了信号 → 必须与 §4 上一行一起串行改 |
-| 人设语气 / 禁用风格 / 正反例 | `src/persona.js` | `node --check src/persona.js` + 手工对话；改 `PERSONA_VERSION` 要同步台账与 README |
-| system prompt 四段结构 / 策略指令 | `src/prompts.js` | `node --check` + 手工对话；处理「同源」约束 |
-| 「观」/「校」/档位判定 / 策略裁决 | `src/agents.js` | `node --check` + `npm test`（`resolveStrategy` 保 S0/S6 是安全底线）+ A/B 脚本 |
-| 模型调用：重试 / 超时 / SSE 解析 / 报错文案 | `src/llm.js` | `node --check` + 手工发一条消息看首字；改超时/重试要说明对费用的影响 |
+| 开口引导阶梯的**文案** | `src/pipeline/prompts.js:buildEngageBlock`（**自动读 `ENGAGE_LADDER`，改文案不改信号**） | `npm test`；若同时改了信号 → 必须与 §4 上一行一起串行改 |
+| 人设语气 / 禁用风格 / 正反例 | `src/domain/persona.js` | `node --check src/domain/persona.js` + 手工对话；改 `PERSONA_VERSION` 要同步台账与 README |
+| system prompt 四段结构 / 策略指令 | `src/pipeline/prompts.js` | `node --check` + 手工对话；处理「同源」约束 |
+| 「观」/「校」/档位判定 / 策略裁决 | `src/pipeline/agents.js` | `node --check` + `npm test`（`resolveStrategy` 保 S0/S6 是安全底线）+ A/B 脚本 |
+| 模型调用：重试 / 超时 / SSE 解析 / 报错文案 | `src/infra/llm.js` | `node --check` + 手工发一条消息看首字；改超时/重试要说明对费用的影响 |
 | 模型名 / Base URL / 温度 / 推理模式 | **`.env`**（或界面「设置」，落 `data/config.json`） | 改完不能硬编码回代码：`grep -rn "deepseek" src/` 只应出现在**默认值**与注释里 |
-| 长期记忆的抽取 / 冲突判定 / 召回打分 | `src/memory.js` | `node --check` + 手工「记住/忘掉」+ 检查 `data/memory.json` 形态 |
-| 记忆衰减阈值 / 淘汰策略 | `src/memory.js`（`applyDecay` / `pruneItems`） | 同上；**必须验证幂等**（同一时刻调两次结果一致） |
-| 记忆默认开关 / 单独同意 | `src/memory.js:emptyStore` + `public/app.js` 的 `memoryConsent` | **改默认值 = 合规事故**，先改 `docs/design.md`，再改代码 |
-| 「回来」问候语 / 首访判定 | `src/comeback.js`（`VISIT_GAP_MS`） | 手工清 `data/` 后连调 3 次 `/api/comeback`，看 `visitCount` 是否保持 1 |
-| 会话历史 / 落盘时机 | `src/sessions.js`（`SAVE_DEBOUNCE_MS` / `flush`） | 手工聊 3 轮 → 强杀进程 → 重启看历史是否在 |
-| 管理接口的字段形状 | `src/routes.js` | 手工 `curl` 单条；改响应形状要同步 `docs/design.md` 与前端 `app.js` |
-| 服务启动 / 端口 / 静态目录 / 优雅退出 | `main.js` | `node --check main.js`；**别改 `app.listen(PORT, '127.0.0.1')` 的绑定地址**（见 §6） |
+| 长期记忆的抽取 / 冲突判定 / 召回打分 | `src/infra/memory.js` | `node --check` + 手工「记住/忘掉」+ 检查 `data/memory.json` 形态 |
+| 记忆衰减阈值 / 淘汰策略 | `src/infra/memory.js`（`applyDecay` / `pruneItems`） | 同上；**必须验证幂等**（同一时刻调两次结果一致） |
+| 记忆默认开关 / 单独同意 | `src/infra/memory.js:emptyStore` + `public/app.js` 的 `memoryConsent` | **改默认值 = 合规事故**，先改 `docs/design.md`，再改代码 |
+| 「回来」问候语 / 首访判定 | `src/infra/comeback.js`（`VISIT_GAP_MS`） | 手工清 `data/` 后连调 3 次 `/api/comeback`，看 `visitCount` 是否保持 1 |
+| 会话历史 / 落盘时机 | `src/infra/sessions.js`（`SAVE_DEBOUNCE_MS` / `flush`） | 手工聊 3 轮 → 强杀进程 → 重启看历史是否在 |
+| 管理接口的字段形状 | `src/api/routes.js` | 手工 `curl` 单条；改响应形状要同步 `docs/design.md` 与前端 `app.js` |
+| 服务启动 / 端口 / 静态目录 / 优雅退出 | `src/server.js` | `node --check src/server.js`；**别改 `app.listen(PORT, '127.0.0.1')` 的绑定地址**（见 §6） |
 | 界面布局 / 样式 / 动效 | `public/style.css` | 浏览器实测 + 深浅色 + ≤860px + `prefers-reduced-motion`；改样式注意 §2.3 的 103 处覆盖 |
 | 前端交互 / 会话列表 / 主题 / 向导 | `public/app.js` | 同上；改 `el` 键名必须同步 `public/index.html` 的 id（**串行改**） |
 | 桌面窗口 / 端口选择 / sidecar 拉起 | `src-tauri/src/lib.rs` | 无自动化测试；**跑不了就写「未验证」**。改 `pick_port()` 前先读 §6 |
@@ -251,11 +254,11 @@ node _tmp/dep-graph.js --check  # 只检查环，有环退出码非 0
    热线一律只说「可信任的人 / 学校心理中心 / 当地紧急服务」（见 `safety.js` 文件头注释）。
 7. **开口引导的「信号判定」（`strategy.js`）与「文案」（`prompts.js`）必须同源**。
    `prompts.js` 直接 `require('./strategy').ENGAGE_LADDER`，不许在两处各写一套。
-8. **模型名由 `.env` 提供，代码不硬编码**。`src/llm.js` 通过 `config.getConfig()` 拿模型名；
+8. **模型名由 `.env` 提供，代码不硬编码**。`src/infra/llm.js` 通过 `config.getConfig()` 拿模型名；
    `config.js` 里的 `deepseek-flash` 只是**默认值**，界面/环境变量可覆盖。
 9. **Tauri 使用系统原生标题栏**（`tauri.conf.json` 的 `decorations: true`），
    **不做自绘标题栏**——自绘会重新引入「窗口按钮失效」的老问题（day09 的教训）。
-10. **服务只监听回环地址**。`main.js:61` 的 `HOST = '127.0.0.1'` 是硬要求：
+10. **服务只监听回环地址**。`src/server.js:61` 的 `HOST = '127.0.0.1'` 是硬要求：
     `app.listen(PORT)` 默认绑 `0.0.0.0`，同网段的人能直接读到用户的私密对话。
 11. **记忆默认关闭**（`emptyStore()` 返回 `enabled: false`）。依 PIPL 第 29 条，敏感个人信息需「单独同意」。
 12. **日志脱敏**：`sessionId` 只写 HMAC 哈希（`hmacSessionId`），**不写对话原文**；
@@ -343,12 +346,12 @@ node _tmp/dep-graph.js --check  # 只检查环，有环退出码非 0
 
 | 文件 | 谁写 | 谁读 | 何时写 | 损坏如何降级 |
 | --- | --- | --- | --- | --- |
-| `data/config.json` | `src/config.js:writeStoredConfig`（**临时文件 + rename 原子替换，`mode 0o600`**） | `config.getConfig` | 只在你点「保存设置」/ 界面填 Key 时 | `readStoredConfig` 任何异常 → **静默降级为空对象**，回落环境变量与默认值；服务照常启动 |
-| `data/memory.json` | `src/memory.js:saveStore` | `loadStore`（任何读写前） | 增删改记忆 / 开关变更 / 抽取落库 | `loadStore` 异常 → `emptyStore()`（**空库、`enabled:false`**）；单个条目非法则被 `isValidItem` 过滤掉，不拖垮整库 |
-| `data/sessions.json` | `src/sessions.js`（**防抖 800ms** + 临时文件 rename 原子替换） | `loadFromDisk` | 追加轮次后防抖落盘；`main.js` 收到 SIGINT/SIGTERM 时 **同步 `flush()`** | 损坏 → 该会话回落 `normalizeSession` 的默认值；`mergeDefaults` 逐字段兜底 |
-| `logs/calls-YYYY-MM-DD.jsonl` | `src/logger.js:appendLog`（同步追加） | 成本台账 / 评测 | 每轮对话结束（`finalizeTurn`） | 写失败只 `console.error('日志写入失败（不中断服务）')` |
+| `data/config.json` | `src/infra/config.js:writeStoredConfig`（**临时文件 + rename 原子替换，`mode 0o600`**） | `config.getConfig` | 只在你点「保存设置」/ 界面填 Key 时 | `readStoredConfig` 任何异常 → **静默降级为空对象**，回落环境变量与默认值；服务照常启动 |
+| `data/memory.json` | `src/infra/memory.js:saveStore` | `loadStore`（任何读写前） | 增删改记忆 / 开关变更 / 抽取落库 | `loadStore` 异常 → `emptyStore()`（**空库、`enabled:false`**）；单个条目非法则被 `isValidItem` 过滤掉，不拖垮整库 |
+| `data/sessions.json` | `src/infra/sessions.js`（**防抖 800ms** + 临时文件 rename 原子替换） | `loadFromDisk` | 追加轮次后防抖落盘；`src/server.js` 收到 SIGINT/SIGTERM 时 **同步 `flush()`** | 损坏 → 该会话回落 `normalizeSession` 的默认值；`mergeDefaults` 逐字段兜底 |
+| `logs/calls-YYYY-MM-DD.jsonl` | `src/core/logger.js:appendLog`（同步追加） | 成本台账 / 评测 | 每轮对话结束（`finalizeTurn`） | 写失败只 `console.error('日志写入失败（不中断服务）')` |
 
-**目录选择**（`src/paths.js`）：`data/` 与 `logs/` 都**优先 exe/项目旁边**，`canWrite` 失败才退到
+**目录选择**（`src/core/paths.js`）：`data/` 与 `logs/` 都**优先 exe/项目旁边**，`canWrite` 失败才退到
 `%APPDATA%\xinyu\data` 与 `%APPDATA%\xinyu\logs`（可用 `XINYU_DATA_DIR` 强制指定）。
 这条是为打包后设计的：exe 快照目录只读，数据必须写到可写位置。
 

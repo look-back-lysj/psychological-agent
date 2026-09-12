@@ -64,7 +64,7 @@ Key 只保存在本机 `data/config.json`（已在 `.gitignore` 中），界面�
 
 守岸人的人设参照游戏《鸣潮》的角色「守岸人」：平静、克制、先观察后承担、短句、留白多。产品只借用这套语气特征；对用户呈现的身份始终是「守岸人」本人，不宣称自己是游戏角色。
 
-**诚实标注**：我们没有官方可直引的台词全文或语料。`src/persona.js` 里的句法规则来自 **106 条语料的统计 + 设计假设**，不是官方发布语料，也不代表官方设定。二创里「永远等你」「只属于你」这类说法没有官方依据，也与「不承诺保密、不诱导依赖」的边界冲突，因此一律不用。
+**诚实标注**：我们没有官方可直引的台词全文或语料。`src/domain/persona.js` 里的句法规则来自 **106 条语料的统计 + 设计假设**，不是官方发布语料，也不代表官方设定。二创里「永远等你」「只属于你」这类说法没有官方依据，也与「不承诺保密、不诱导依赖」的边界冲突，因此一律不用。
 
 人设主要用来约束说话方式：
 
@@ -85,7 +85,7 @@ Key 只保存在本机 `data/config.json`（已在 `.gitignore` 中），界面�
 | 层 | 做什么 | 位置 |
 | --- | --- | --- |
 | 输入风险分级 | 规则命中 + 会话历史累计，把输入分为 L0 普通 / L1 关注 / L2 需转介 / L3 危机，冲突时就高不就低 | `src/safety.js` |
-| 提示词约束 | 四段式提示词：角色与语气 / 本轮策略 / 安全红线 / 长期记忆；L3 直接替换为固定危机协议 | `src/prompts.js` |
+| 提示词约束 | 四段式提示词：角色与语气 / 本轮策略 / 安全红线 / 长期记忆；L3 直接替换为固定危机协议 | `src/pipeline/prompts.js` |
 | 输出后置检查 | 归一化 + 正则拦截诊断、危险方法、保密承诺、永久承诺、亲昵称呼、提示词泄露 | `src/safety.js` |
 
 后置检查的关键取舍：**先完整取回模型输出，检查通过后再分段下发**。一旦命中越界内容，违规文本到达前端的字节数为 0；代价是首字延迟略高。
@@ -242,8 +242,17 @@ node scripts/build-desktop.js --check   # 只做环境预检，不真构建
 ## 项目结构
 
 ```text
-main.js               服务入口（加载配置、启动 Express、挂载 API）
-src/                  后端模块：persona / prompts / safety / strategy / agents / innerstate / memory / llm / chat / config / routes / sessions
+main.js               根目录兼容入口（3 行薄转发 → src/server.js；package.json 的 main/start 指向它）
+src/server.js         真实服务入口（加载配置、启动 Express、挂载 API、优雅退出）
+src/index.js          薄别名（兼容 node src/index.js）
+src/core/             L0 基础设施：utils / paths / logger
+src/domain/           L1 纯规则：persona（人设）/ innerstate（内在状态）
+src/infra/            L2 有状态或外部调用：config / llm / memory / sessions / comeback
+src/pipeline/         L3 装配：prompts（提示词组装）/ agents（观·校·档位）
+src/chat/             L4 编排：index（路由装配）/ pipeline / extractor / http / retry
+src/api/routes.js     L4 管理接口（config / memory / comeback / sessions）
+src/safety.js         🔴 冻结契约（路径被 tests/run.js 硬引用，不随分层迁移）
+src/strategy.js       🔴 冻结契约（路径被 tests/run.js 硬引用，不随分层迁移）
 public/               前端页面（原生 JS，无外部依赖）
 src-tauri/            Tauri 2 桌面外壳（Rust 源码 + 配置 + 图标 + 闪屏）
 scripts/              构建与发布脚本

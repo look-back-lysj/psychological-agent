@@ -1,4 +1,16 @@
 /**
+ * 模块：domain/persona —— 角色人设层（守岸人的语气与反例）
+ * 层级：domain L1（纯规则）
+ * 职责：提供人设文本块与 PERSONA_VERSION；决定「像不像守岸人」的语料与反例。
+ * 依赖：无
+ * 被依赖：pipeline/prompts（buildPersonaBlock / buildSafetyBlock）、chat/pipeline（PERSONA_VERSION 写日志）
+ * 改动风险：🟢 低 —— node --check + node tests/run.js
+ * 契约：PERSONA_VERSION 与 buildPersonaBlock / buildSafetyBlock 的导出名
+ * 不要做什么：
+ *   1) 不要在这里写安全红线（红线属于 safety.js，两边重复会不同步）
+ *   2) 不要引入 fs / fetch，保持纯数据与纯函数
+ */
+/**
  * 守岸人 · 角色人设层
  *
  * 语调基调：清冷、克制、先观察后承担、留白多。

@@ -39,7 +39,7 @@ logs/                     # 整个目录默认忽略（保护运行期原文）
 - 台账内容：[`usage_summary.md`](usage_summary.md)
 - 评测报告（引用了本目录）：[`../docs/evaluation-report.md`](../docs/evaluation-report.md)
 - 红队与 A/B 的原始产物：[`../docs/eval-results/`](../docs/eval-results/)
-- 记录字段的代码实现：[`../src/logger.js`](../src/logger.js)
+- 记录字段的代码实现：[`../src/core/logger.js`](../src/core/logger.js)
 
 ## 本文件何时需要更新
 

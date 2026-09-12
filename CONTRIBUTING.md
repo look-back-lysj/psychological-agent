@@ -62,7 +62,7 @@ cp .env.example .env
 
 ### 2.4 不要顺手改的东西
 
-`README.md`（由固定一人维护）、`main.js`、`build.js`、`package.json`、`.gitignore`、
+`README.md`（由固定一人维护）、`src/server.js`、`build.js`、`package.json`、`.gitignore`、
 `src-tauri/**`、`tests/**`、`eval/**`、`scripts/**`、`docs/**`（除你被点名的那一个）、`devlog/`（除你被分配的那一天）、`data/**`。
 
 > 如果你**发现**这些文件需要改：**不要动手**，在交付说明里列一份「需同步清单」交给主 agent。
@@ -87,8 +87,8 @@ cp .env.example .env
 | 同一条分支可以包含 | 不可以包含 |
 | --- | --- |
 | `src/safety.js` + `tests/cases.jsonl`（同一次判定改动） | `src/safety.js` + `src/strategy.js`（**两个都是 R6，必须各开一条**） |
-| `src/strategy.js` + `src/prompts.js`（**同源约束，必须一起改**） | `src/strategy.js` + `public/style.css` |
-| `public/app.js` + `public/index.html`（DOM 契约，必须一起改） | `public/app.js` + `src/chat.js`（前后端契约要分两步） |
+| `src/strategy.js` + `src/pipeline/prompts.js`（**同源约束，必须一起改**） | `src/strategy.js` + `public/style.css` |
+| `public/app.js` + `public/index.html`（DOM 契约，必须一起改） | `public/app.js` + `src/chat/`（前后端契约要分两步） |
 | `docs/**` 里同一主题的多个文件 | 顺手把 `README.md` 也改了 |
 
 ---

@@ -24,24 +24,29 @@
 
 | 你想改什么 | 去这个文件 | 禁止顺手改 |
 | --- | --- | --- |
-| 对话主链路 / SSE 端点 | `src/chat.js` | `src/sessions.js`、`src/safety.js`、`src/strategy.js`（同一次任务里只改一个） |
+
+> **目录已分层**（2026-09-12 重构）：`core/`(L0) `domain/`(L1) `infra/`(L2) `pipeline/`(L3) `chat/`+`api/`(L4)；
+> `src/safety.js` 与 `src/strategy.js` **仍在 src/ 顶层不动**（`tests/run.js` 硬引用其路径）。
+> 分层规则可机检：`node scripts/check-layering.js`。
+
+| 对话主链路 / SSE 端点 | `src/chat/index.js`（HTTP 装配），业务编排在 `src/chat/pipeline.js` | `src/infra/sessions.js`、`src/safety.js`、`src/strategy.js`（同一次任务里只改一个） |
 | 前置风险分级 / 输出后置检查 | `src/safety.js` | 任何其它 `src/` 文件；`tests/cases.jsonl` 的期望值 |
-| 策略路由 S0—S6 / 开口引导阶梯信号 | `src/strategy.js` | `src/prompts.js`（必须同源 → **串行**） |
-| 提示词四段结构 / 策略指令文案 | `src/prompts.js` | `src/strategy.js` 的 `ENGAGE_LADDER`（同源，串行） |
-| 人设语气 / 反例 / 正例 | `src/persona.js` | `src/prompts.js`（人设块由 prompts 拼装） |
-| 「观」/「校」/档位 / 策略裁决 | `src/agents.js` | `src/llm.js` 的调用契约（`callLLM(prompt, messages)` 签名） |
-| 模型调用 / 重试 / 超时 / SSE 解析 | `src/llm.js` | 硬编码模型名（必须走 `.env` / `config`） |
-| 模型配置读写 / Key 脱敏 | `src/config.js` | `.env`（**不许把真实 Key 写进任何文件**） |
-| 长期记忆（抽取 / 召回 / 衰减 / 冲突） | `src/memory.js` | `data/memory.json` 的字段名（前端与 routes 都依赖） |
-| 会话转写 / 落盘防抖 | `src/sessions.js` | `main.js` 的 `sessions.flush()` 调用点 |
-| 「回来」问候 / 首访判定 | `src/comeback.js` | `data/state.json` 的 `lastSeenAt` / `visitCount`（与 P0 修复相关） |
-| 内在状态 → 表达约束 | `src/innerstate.js` | `src/agents.js:replyShape` 的消费方式 |
-| 管理接口（config/memory/comeback/sessions） | `src/routes.js` | 前端 `public/app.js` 里对应的 fetch 形状（改契约要两边同步） |
-| 日志 / 脱敏 | `src/logger.js` | **不许往日志里加 `message` 原文** |
-| 路径解析（data/logs 目录） | `src/paths.js`（被 5 个模块依赖） | `src/config.js` / `src/logger.js` / `src/memory.js` / `src/sessions.js` / `src/comeback.js` 的 `dataDir()` 用法 |
-| 服务入口 / 端口 / 优雅退出 | `main.js` | `src/index.js`（薄别名）、`.env` 里的 `PORT` 语义 |
-| **暂不动**：兼容别名 | `src/index.js` | 任何东西（4 行薄别名；注释有已知过时项） |
-| 通用工具（清洗 / 归一化 / HMAC） | `src/utils.js` | 被 7 个模块依赖：改 `normalizeText` 口径会同时影响安全判定与记忆去重 |
+| 策略路由 S0—S6 / 开口引导阶梯信号 | `src/strategy.js` | `src/pipeline/prompts.js`（必须同源 → **串行**） |
+| 提示词四段结构 / 策略指令文案 | `src/pipeline/prompts.js` | `src/strategy.js` 的 `ENGAGE_LADDER`（同源，串行） |
+| 人设语气 / 反例 / 正例 | `src/domain/persona.js` | `src/pipeline/prompts.js`（人设块由 prompts 拼装） |
+| 「观」/「校」/档位 / 策略裁决 | `src/pipeline/agents.js` | `src/infra/llm.js` 的调用契约（`callLLM(prompt, messages)` 签名） |
+| 模型调用 / 重试 / 超时 / SSE 解析 | `src/infra/llm.js` | 硬编码模型名（必须走 `.env` / `config`） |
+| 模型配置读写 / Key 脱敏 | `src/infra/config.js` | `.env`（**不许把真实 Key 写进任何文件**） |
+| 长期记忆（抽取 / 召回 / 衰减 / 冲突） | `src/infra/memory.js` | `data/memory.json` 的字段名（前端与 routes 都依赖） |
+| 会话转写 / 落盘防抖 | `src/infra/sessions.js` | `src/server.js` 的 `sessions.flush()` 调用点 |
+| 「回来」问候 / 首访判定 | `src/infra/comeback.js` | `data/state.json` 的 `lastSeenAt` / `visitCount`（与 P0 修复相关） |
+| 内在状态 → 表达约束 | `src/domain/innerstate.js` | `src/pipeline/agents.js:replyShape` 的消费方式 |
+| 管理接口（config/memory/comeback/sessions） | `src/api/routes.js` | 前端 `public/app.js` 里对应的 fetch 形状（改契约要两边同步） |
+| 日志 / 脱敏 | `src/core/logger.js` | **不许往日志里加 `message` 原文** |
+| 路径解析（data/logs 目录） | `src/core/paths.js`（被 5 个模块依赖；`appRoot()` 靠 `../../` 回项目根，**改层级必须同步**） | `src/infra/config.js` / `src/core/logger.js` / `src/infra/memory.js` / `src/infra/sessions.js` / `src/infra/comeback.js` 的 `dataDir()` 用法 |
+| 服务入口 / 端口 / 优雅退出 | `src/server.js` | `src/index.js`（薄别名）、`.env` 里的 `PORT` 语义 |
+| **暂不动**：兼容别名 | `src/index.js`、根目录 `main.js` | 任何东西（两个都是薄转发；`main.js` 是 package.json 入口，别删） |
+| 通用工具（清洗 / 归一化 / HMAC） | `src/core/utils.js` | 被 7 个模块依赖：改 `normalizeText` 口径会同时影响安全判定与记忆去重 |
 | 界面骨架 / id / class / SVG 图标 | `public/index.html` | `public/app.js` 的 `el` 缓存键（**串行**） |
 | 前端交互 / SSE 解析 / 渲染 | `public/app.js` | `public/index.html` 的 id、`public/style.css` 的 class（**串行**） |
 | 样式 / 动效 / 响应式 | `public/style.css` | 章节顺序（**103 处后写覆盖**，拆/挪会静默错乱，见 ARCHITECTURE §2.3） |
@@ -63,7 +68,8 @@
 
 ```
 README.md              （由另一个人负责，最常被并行改）
-main.js
+main.js                （根目录兼容入口；真实实现在 src/server.js）
+src/server.js
 build.js
 package.json
 .gitignore
@@ -94,7 +100,7 @@ devlog/**              （除你被分配的那一天）
    局限是交付物的一部分，删掉等于造假。
 8. **不许执行任何 `git` 命令**（`git status` 也不例外）——除非任务书明确要求且指明允许的那一条。
    版本控制由人类维护者执行。
-9. **不许启动长驻服务或跑完整构建**：不许 `npm start`、不许 `node main.js` 挂着、不许 `npm run build` / `npm run desktop`。
+9. **不许启动长驻服务或跑完整构建**：不许 `npm start`、不许 `node main.js` / `node src/server.js` 挂着、不许 `npm run build` / `npm run desktop`。
    需要验证时用**短命进程**（起一个、测完就杀），或写探针脚本到 `_tmp/` 后立即结束。
 10. **不许改 `data/` 下任何文件**（那是用户本机数据）。
 11. **不许把对话原文写进日志**。日志字段是固定集合（见 ARCHITECTURE §7）。
@@ -108,10 +114,10 @@ devlog/**              （除你被分配的那一天）
 | --- | --- | --- |
 | **R0** | 纯注释 / 纯文档（不含结论） / `devlog` 文本 | `node --check`（若改了 js）+ 肉眼校对；**不许改结论** |
 | **R1** | `src/index.js` 这类薄别名；无依赖的常量文案 | `node --check <file>` |
-| **R2** | `src/logger.js`、`src/paths.js` 的非默认值调整 | `node --check` + 起一次短命服务确认能启动（不写真实对话） |
-| **R3** | `src/utils.js`、`src/innerstate.js`、`src/comeback.js` | `node --check` **+ `npm test`**（utils 被 7 个模块依赖，必须确认没回退） |
-| **R4** | `src/config.js`、`src/llm.js`、`src/prompts.js`、`src/persona.js`、`src/sessions.js`、`src/routes.js`、`public/index.html`、`src-tauri/**` | `node --check` **+ `npm test`（42/42 + 9/9）**；涉及前端再加**浏览器实测**（深浅色 + ≤860px + reduce-motion）；Rust 侧**跑不了就写「未验证」** |
-| **R5** | `src/chat.js`、`src/memory.js`、`src/agents.js`、`public/app.js`、`public/style.css` | R4 全部 **+ 手工端到端对话**（发一条真实消息，确认能流式收到回复且 `done` 事件完整）；改记忆再加**幂等性验证**；改前端再加**无控制台报错** |
+| **R2** | `src/core/logger.js`、`src/core/paths.js` 的非默认值调整 | `node --check` + 起一次短命服务确认能启动（不写真实对话） |
+| **R3** | `src/core/utils.js`、`src/domain/innerstate.js`、`src/infra/comeback.js` | `node --check` **+ `npm test`**（utils 被 7 个模块依赖，必须确认没回退） |
+| **R4** | `src/infra/config.js`、`src/infra/llm.js`、`src/pipeline/prompts.js`、`src/domain/persona.js`、`src/infra/sessions.js`、`src/api/routes.js`、`public/index.html`、`src-tauri/**` | `node --check` **+ `npm test`（42/42 + 9/9）**；涉及前端再加**浏览器实测**（深浅色 + ≤860px + reduce-motion）；Rust 侧**跑不了就写「未验证」** |
+| **R5** | `src/chat/index.js`、`src/infra/memory.js`、`src/pipeline/agents.js`、`public/app.js`、`public/style.css` | R4 全部 **+ 手工端到端对话**（发一条真实消息，确认能流式收到回复且 `done` 事件完整）；改记忆再加**幂等性验证**；改前端再加**无控制台报错** |
 | **R6** | **`src/safety.js` 或 `src/strategy.js`**（含 `tests/run.js` 加载路径依赖） | **必然是最高级**，见下 |
 
 ### R6 的具体要求（不许打折）
@@ -140,7 +146,7 @@ devlog/**              （除你被分配的那一天）
 | **V2** | `node tests/run.js --verbose` | 逐条打印判定过程 | 每条用例的判定链路；失败时用它定位 |
 | **V3** | `node tests/run.js --no-legacy` | 跳过历史 s1—s9 回归 | 正式 42 条仍然 42/42 |
 | **V4** | `node tests/run.js --json` | 额外写出 `_tmp/eval-report.json` | 终端报告 + 生成 JSON 文件 |
-| **V5** | `node _tmp/dep-graph.js` / `--check` | 依赖分层 + 循环依赖检查 | 5 层 17 文件；`--check` 有环则退出码非 0（当前：**无循环依赖**）。⚠️ `_tmp/` 可能被清理，届时用 grep 复核 |
+| **V5** | `node scripts/check-layering.js` / `--check` | 依赖分层 + 循环依赖检查 | 22 个 `src/**/*.js`；`--check` 有违规或环则退出码非 0（当前：**无反向依赖、domain 层无 fs/http、无循环依赖**） |
 | **V6** | `node eval/redteam/run-redteam.js` | L4 红队（**需真实 Key**） | 20 条、红线硬命中 **0**、危机识别率目标 100% |
 | **V7** | `node eval/ab/run-ab.js` / `node eval/human/make-sheet.js` | A/B 对照 / L2 人工评分表 | A/B 需真实 Key；`make-sheet.js` 生成评分表 |
 
@@ -174,7 +180,7 @@ devlog/**              （除你被分配的那一天）
 
 ### 不能用在这些场景的命令
 
-- ❌ `npm start` / `node main.js` —— 长驻服务，禁止；要验证就起短命进程并立刻杀掉。
+- ❌ `npm start` / `node main.js` / `node src/server.js` —— 长驻服务，禁止；要验证就起短命进程并立刻杀掉。
 - ❌ `npm run build` / `npm run bundle` / `npm run desktop` —— 完整构建，禁止（慢、覆盖 `dist/`）。
 - ❌ `curl` 传中文 —— **在 Git Bash 里不可靠**！实测「我不想活了」（5 个字）被传成 `inputLength=8`，
   一度让人误判「未配置 Key 时危机协议失效」。**验证中文输入必须走 Node 或写文件**。
@@ -197,11 +203,11 @@ devlog/**              （除你被分配的那一天）
 | 并行轨 | 文件范围 | 与其它轨的边界 |
 | --- | --- | --- |
 | A | `src/safety.js` | **独占轨**，见 §6.3 |
-| B | `src/strategy.js` + `src/prompts.js` | 必须**同一条轨**内串行（同源约束） |
-| C | `src/chat.js` + `src/sessions.js` | 不碰 safety/strategy |
-| D | `src/memory.js` | 不碰 `src/routes.js` 的响应形状（要改契约就与 E 串行） |
-| E | `src/routes.js` + `src/config.js` + `src/llm.js` | 与 D 之间有 `memoryRouter` 契约 → 改动响应形状时串行 |
-| F | `src/agents.js` | 与 B 有 `STRATEGY_META` / `MODEL_TUNABLE` 契约 → 改策略键集时串行 |
+| B | `src/strategy.js` + `src/pipeline/prompts.js` | 必须**同一条轨**内串行（同源约束） |
+| C | `src/chat/index.js` + `src/infra/sessions.js` | 不碰 safety/strategy |
+| D | `src/infra/memory.js` | 不碰 `src/api/routes.js` 的响应形状（要改契约就与 E 串行） |
+| E | `src/api/routes.js` + `src/infra/config.js` + `src/infra/llm.js` | 与 D 之间有 `memoryRouter` 契约 → 改动响应形状时串行 |
+| F | `src/pipeline/agents.js` | 与 B 有 `STRATEGY_META` / `MODEL_TUNABLE` 契约 → 改策略键集时串行 |
 | G | `public/style.css` | 与 H 边界清晰（class 名是契约，但只加不改就安全） |
 | H | `public/app.js` + `public/index.html` | **必须同一条轨**内串行（DOM 契约） |
 | I | `tests/**` + `eval/**` | 独立；但**不许为了通过而改期望值** |
@@ -213,7 +219,7 @@ devlog/**              （除你被分配的那一天）
 | 情况 | 原因 |
 | --- | --- |
 | **改 `src/safety.js` 或 `src/strategy.js`** | **全项目停线**：这两个是安全底线，且 `tests/run.js` 硬编码引用其路径。改期间其它轨不许改 `src/`（避免基线漂移导致回归结果无法归因） |
-| `src/strategy.js` ↔ `src/prompts.js` 阶梯同源 | `prompts.js` 直接读 `ENGAGE_LADDER`；两边同时改必然出现「信号与文案不一致」 |
+| `src/strategy.js` ↔ `src/pipeline/prompts.js` 阶梯同源 | `prompts.js` 直接读 `ENGAGE_LADDER`；两边同时改必然出现「信号与文案不一致」 |
 | `public/app.js` ↔ `public/index.html` DOM 契约 | `el` 缓存 96 个键全依赖 index.html 的 id；改 id 与改 `el` 键名必须同一人顺序完成 |
 | `README.md` | **串行区**：由固定一个人负责；其它人只许**报告需要同步的地方**，不许自己动手 |
 | **批量重命名 / 移动文件** | 先串行扫全部引用（`grep -rn "<旧名>" .`），列出受影响清单，再动手。`src/safety.js` / `src/strategy.js` **不许移动** |
@@ -320,7 +326,7 @@ grep -rnE "sk-[A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|BEGIN [A-Z 
 
 | 题目要求 | 仓库位置 | 改它时要同步什么 |
 | --- | --- | --- |
-| 可运行 Demo | `main.js` + `public/` + `src/`（桌面版产物走 `build.js`） | 版本号、`README.md` 的下载入口 |
+| 可运行 Demo | `src/server.js` + `public/` + `src/`（桌面版产物走 `build.js`） | 版本号、`README.md` 的下载入口 |
 | **真实调用记录** | `logs/calls-*.jsonl`（本机）+ `samples/calls.sample.jsonl`（脱敏样例） | 若新增样例，确认已脱敏；`logs/README.md` 补说明 |
 | 使用说明 | `docs/操作手册.md` | 界面步骤变了要重截 `docs/screenshots/` |
 | 设计文档 | `docs/design.md` | 架构变了要同步 `ARCHITECTURE.md` |
@@ -346,7 +352,7 @@ grep -rnE "sk-[A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|BEGIN [A-Z 
 | 界面结构（id / class / 向导步骤数） | `public/index.html` ↔ `public/app.js`（**串行**）+ `docs/操作手册.md` + `README.md` 的截图（截图要重拍） |
 | 人设规则 / `PERSONA_VERSION` | `docs/persona.md` + `ARCHITECTURE.md` 模块表 + 当天 `devlog` |
 | 提示词版本 / `PROMPT_VERSION` | `docs/design.md` + 日志字段说明（`meta.promptVersion`） |
-| 记忆字段（`data/memory.json` 结构变化） | `ARCHITECTURE.md` §6.3 + `docs/design.md` + `src/routes.js` 的 `/api/memory` 响应 + 前端记忆面板 |
+| 记忆字段（`data/memory.json` 结构变化） | `ARCHITECTURE.md` §6.3 + `docs/design.md` + `src/api/routes.js` 的 `/api/memory` 响应 + 前端记忆面板 |
 | 日志字段集 | `ARCHITECTURE.md` §7 + `logs/README.md` |
 | 打包目标 / 产物路径 | `build.js` + `scripts/build-desktop.js` + `README.md` + `docs/操作手册.md` |
 | 数据目录 / 路径策略 | `ARCHITECTURE.md` §7 + `docs/操作手册.md` |
