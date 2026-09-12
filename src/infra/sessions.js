@@ -1,7 +1,7 @@
 /**
  * 模块：infra/sessions —— 会话内存 + 本地持久化（防抖落盘）
  * 层级：infra L2（有状态 / 外部 IO）
- * 职责：维护会话轮次、会话状态、风险历史与内在状态；800ms 防抖写 data/sessions.json，退出前可同步 flush。
+ * 职责：维护会话轮次、会话状态、风险历史与内在状态；800ms 防抖写 data/sessions.json（经 infra/atrest 静态加密），退出前可同步 flush。
  * 依赖：core/paths（dataDir）、strategy（createSessionState）、domain/innerstate（createInnerState）
  * 被依赖：server.js、chat/pipeline、chat/retry、chat/index、api/routes
  * 改动风险：🟡 中 —— node --check + node tests/run.js
@@ -27,6 +27,7 @@ const path = require('path');
 const { dataDir } = require('../core/paths');
 const { createSessionState } = require('../strategy');
 const { createInnerState } = require('../domain/innerstate');
+const atrest = require('./atrest');
 
 const MAX_TURNS = 8;                       // 送入模型的历史轮数上限（用户轮）
 const SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6 小时未活动即回收
@@ -253,7 +254,7 @@ function loadFromDisk() {
     if (!file) return;
     let text;
     try {
-      text = fs.readFileSync(file, 'utf8');
+      text = atrest.readTextFile(file);   // 透明解密（历史明文同样兼容）
     } catch (e) {
       return; // 不存在 / 无权限
     }
@@ -297,7 +298,7 @@ function writeNow() {
   try {
     const file = sessionFilePath();
     if (!file) return false;
-    const payload = `${JSON.stringify(serialize(), null, 2)}\n`;
+    const payload = atrest.encode(`${JSON.stringify(serialize(), null, 2)}\n`);
     try { fs.mkdirSync(path.dirname(file), { recursive: true }); } catch (e) { /* 交给写入失败处理 */ }
     const tmp = `${file}.tmp`;
     fs.writeFileSync(tmp, payload, { encoding: 'utf8', mode: 0o600 });

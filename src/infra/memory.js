@@ -1,7 +1,7 @@
 /**
  * 模块：infra/memory —— 长期记忆（本地 JSON：抽取 / 召回 / 衰减 / 冲突）
  * 层级：infra L2（有状态 / 外部 IO）
- * 职责：读写 data/memory.json；提供 retrieveMemories 打分召回、extractFromTurn 异步抽取、显式记住/忘掉、衰减与 supersede。
+ * 职责：读写 data/memory.json（经 infra/atrest 静态加密）；提供 retrieveMemories 打分召回、extractFromTurn 异步抽取、显式记住/忘掉、衰减与 supersede。
  * 依赖：core/utils、core/paths
  * 被依赖：chat/pipeline、chat/extractor、infra/comeback、api/routes
  * 改动风险：🟡 中 —— node --check + node tests/run.js（改召回再加幂等性验证）
@@ -26,6 +26,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { normalizeText, truncate } = require('../core/utils');
 const { dataDir } = require('../core/paths');
+const atrest = require('./atrest');
 
 const NL = String.fromCharCode(10);
 // 数据目录：exe 旁边优先，不可写时回退用户目录（见 paths.js）
@@ -130,7 +131,7 @@ function emptyStore() {
 function loadStore() {
   try {
     if (!fs.existsSync(MEMORY_FILE)) return emptyStore();
-    const raw = fs.readFileSync(MEMORY_FILE, 'utf8');
+    const raw = atrest.readTextFile(MEMORY_FILE);   // 透明解密（历史明文同样兼容）
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return emptyStore();
     const items = Array.isArray(parsed.items) ? parsed.items.filter(isValidItem).map(normalizeItem) : [];
@@ -319,7 +320,7 @@ function saveStore(store) {
       items: pruneItems(store.items || [], MAX_ITEMS),
       tombstones: mergeTombstones(store.tombstones, [])
     };
-    fs.writeFileSync(MEMORY_FILE, JSON.stringify(payload, null, 2), 'utf8');
+    fs.writeFileSync(MEMORY_FILE, atrest.encode(JSON.stringify(payload, null, 2)), { encoding: 'utf8', mode: 0o600 });
     return true;
   } catch (e) {
     return false;
