@@ -3,7 +3,7 @@
  * 层级：core L0
  * 职责：解析可写数据目录与日志目录：exe 旁边优先、不可写回退用户目录；支持 XINYU_DATA_DIR / LOG_DIR 覆盖。
  * 依赖：无（只用 Node 内置 fs / os / path）
- * 被依赖：infra/config、infra/logger（core/logger）、infra/memory、infra/sessions、infra/comeback
+ * 被依赖：core/logger（logDir）、infra/config、infra/memory、infra/sessions、infra/comeback（dataDir / logDir）
  * 改动风险：🟢 低 —— node --check + 起一次短命服务确认能启动
  * 契约：appRoot / dataDir / logDir / canWrite / isPkg 的导出名与语义
  * 不要做什么：

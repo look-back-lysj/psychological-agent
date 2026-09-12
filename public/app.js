@@ -11,6 +11,90 @@
  *
  * 设计约束：所有网络与解析异常都必须被捕获；任何失败都不能让界面卡在“正在回复…”。
  */
+
+/* ============================================================
+ * §0 目录：这个文件怎么读 / 怎么改
+ * ============================================================
+ *
+ * 结构：**整个文件是一个 IIFE**（即下方紧跟的 `(function () { ... })();`），
+ * 内部按「分区标记」切成 25 段，每段以 `/* ==== / * 分区名 / * ==== *​/` 开头。
+ * 分区**不是模块**：所有函数共享同一个闭包作用域，可以互相直接调用、直接读写共享状态。
+ *
+ * 为什么不拆成多个文件（已实测，勿轻易推翻）：
+ *   - `el` 缓存对象有 96 个键、全文件以 `el.xxx` 形式被访问 462 处（`el` 作为标识符出现 476 次），
+ *     几乎每个渲染函数都摸它；
+ *   - 30 个可变 `let`（`state` / `activeId` / `streaming` / `stickBottom` / 各层开合标志…）
+ *     的读写点分散在十几个分区里；
+ *   - `bindEvents` 单函数 264 行，内部调用 49 个不同的具名函数（共 92 个调用点），是**唯一事件入口**；
+ *   → **没有叶子模块可拆**。硬拆只会把「闭包内的隐式耦合」变成「跨文件的隐式耦合」，更难追踪。
+ *   所以本文件**有意保持单文件**，用下面的分区索引当导航。要改行为，请先读对应分区。
+ *
+ * 关键约定（硬约束，改代码前务必确认没违反）：
+ *   1. `el` 对象（分区二）是**唯一 DOM 入口**。禁止在别处直接写 `document.querySelector` /
+ *      `getElementById`。要加元素：先在 `public/index.html` 加 id，再到分区二的 `el` 里登记键。
+ *   2. 30 个可变 `let`（分区三）是共享状态。要改某状态，先**全文件搜该变量名**确认所有读写点；
+ *      新增状态请放在分区三，不要就近 `let` 在函数里当「局部变量」用（会被误当共享状态）。
+ *   3. `bindEvents`（分区十六）是**唯一事件绑定入口**。事件一律在里面 `addEventListener`，
+ *      不要在渲染函数里随手绑（重复渲染会重复叠加监听）。
+ *   4. 动效统一走 `reducedMotion()`（分区四之二）+ `MOTION` 令牌；**不要写死毫秒数**，
+ *      否则「减少动效」偏好会失效。层显隐走 `showLayer()` / `hideLayer()`。
+ *   5. Markdown 渲染走 `renderMarkdown()`（分区五，自实现、先转义再套白名单）。
+ *      **不要引第三方库**（本项目前端零依赖是硬约束）。
+ *   6. 无障碍：浮层显隐走 `setLayerHidden()`（分区三之二，含 focus trap 与 `inert` 降级），
+ *      **不要直接改 `hidden` 属性**，否则焦点会漏到背景、读屏会读到隐藏内容。
+ *   7. 网络请求走分区十一（`streamChat` / `fetchNonStream`），失败一律降级 + Toast，
+ *      不要让界面卡在「正在回复…」。
+ *
+ * 分区索引（行号为插入本块前的实测值，会随改动漂移 → **以分区名为准**）：
+ * ---------------------------------------------------------------
+ *  分区                          起始行   函数数   代表函数
+ *  一、常量与文案                  17      0      LS_KEYS / STRATEGY_LABELS / MOTION
+ *  二、DOM 引用                   165      0      el（96 个键的唯一 DOM 入口）
+ *  三、运行时状态                  290      0      state / activeId / streaming …
+ *  四、通用工具                   325     10      now escapeHtml formatTime makeEl
+ *  三之二、无障碍：焦点隔离         403     14      setLayerHidden collectFocusable handleLayerTab
+ *  四之二、动效工具                552     18      reducedMotion showLayer hideLayer ripple
+ *  五、安全 Markdown 渲染          786      3      renderMarkdown renderInline isBlockStart
+ *  六、本地多会话（localStorage）   918     12      loadState saveState getSession createSession
+ *  七、渲染：消息/会话/标题/空状态  1105     21      buildMessageEl renderMessages renderSessionList
+ *  八、滚动 / 输入框 / Toast       1525     11      scrollToBottom autosize toast
+ *  九、SSE 解析                   1660      3      drainBlocks splitEvents parseEventLines
+ *  十、流式渲染调度                1723      2      scheduleAssistantRender flushAssistantRender
+ *  十一、网络：流式+降级+健康检查    1743      6      applyStreamEvent streamChat fetchNonStream
+ *  十二、对话流程                 1924      7      submitMessage startGeneration retryMessage
+ *  十三、会话操作                 2157      3      switchSession startNewChat deleteSession
+ *  十四、侧边栏/主题/弹窗/复制      2230     10      openSidebar applyTheme toggleTheme copyMessage
+ *  十五、健康检查                 2345      3      setHealth refreshHealth checkHealth
+ *  十五·补、情感连续性（comeback）   2390     12      loadComeback applyComeback renderRecallChips
+ *  十六、事件绑定                 2574      2      bindEvents isEditableTarget
+ *  十七、浮层基础（确认/抽屉/调试）  2852     10      openConfirm openDrawer closeDrawer setDebug
+ *  十八、首次启动向导              2981     15      showWizardStep grantMemoryConsent wizardNext
+ *  十九、设置面板                 3151     10      loadConfig saveSettings testConnection
+ *  二十、长期记忆面板              3302     14      renderMemoryList addMemory patchMemory
+ *  二十、桌面外壳（Tauri）          3589      5      initDesktopShell bindTitlebar syncMaximizeIcon
+ *  二十一、初始化                 3686      1      init
+ * ---------------------------------------------------------------
+ *  合计：25 个分区标记 / 192 个顶层 function。
+ *  机检：`node scripts/check-frontend-sections.js`（发现未归属函数则退出码 1）。
+ *
+ * 「我想改 X」速查：
+ *   - 改消息气泡外观 / 富文本排版 …… 分区七 + `public/style.css` §09
+ *   - 改流式接收 / SSE 解析 ……… 分区九 → 十 → 十一（顺序即数据流）
+ *   - 改发起对话 / 输入框 / 中止 …… 分区十二（`submitMessage` / `syncComposer`）
+ *   - 改会话列表 / 新建 / 删除 …… 分区六（存储）+ 分区七（渲染）+ 分区十三（操作）
+ *   - 改主题（深浅色） …………… 分区十四（`applyTheme` / `toggleTheme`）+ style.css §00 令牌
+ *   - 改无障碍 / 焦点陷阱 ………… 分区三之二（`setLayerHidden`）
+ *   - 改动效节奏 ………………… 分区四之二 + `MOTION` 令牌 + style.css 末尾 reduce 块
+ *   - 改首次启动向导 …………… 分区十八
+ *   - 改设置面板（模型/温度/Key）…… 分区十九
+ *   - 改长期记忆面板 …………… 分区二十
+ *   - 改桌面（Tauri）标题栏 / 最大化 …… 分区二十·桌面外壳 + `src-tauri/`
+ *   - 改变网络请求形状 / 新增接口 ……… 分区十一（并同步核对 `src/api/routes.js`）
+ *
+ * ⚠️ 上面所有行号都会随改动漂移；本目录以**分区名**为准，行号仅供快速跳转参考。
+ *    改了分区结构请重跑 `node scripts/check-frontend-sections.js`。
+ * ============================================================ */
+
 (function () {
   'use strict';
 
