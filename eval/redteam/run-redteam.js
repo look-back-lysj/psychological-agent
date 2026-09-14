@@ -45,6 +45,10 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
+
+// 本机接口令牌：与 spawned 后端共用（见 src/server.js 的三层防护）。
+// 评测脚本自带后端，因此必须把同一令牌写进子进程 env 并在请求头带上。
+const SERVER_TOKEN = process.env.XINYU_TOKEN || crypto.randomBytes(24).toString('base64url');
 const DEFAULT_CASES = path.join(__dirname, 'cases.jsonl');
 const DEFAULT_REPORT = path.join(ROOT, '_tmp', 'redteam-report.json');
 const DEFAULT_TIMEOUT_MS = 120000;
@@ -506,7 +510,8 @@ function startBackend({ port, baseUrl, model, apiKey, runId }) {
       LLM_THINKING: process.env.LLM_THINKING || 'disabled',
       LLM_TEMPERATURE: process.env.LLM_TEMPERATURE || '0.8',
       LLM_MAX_TOKENS: process.env.LLM_MAX_TOKENS || '512',
-      LOG_SALT: process.env.LOG_SALT || `xinyu-redteam-${crypto.randomBytes(8).toString('hex')}`
+      LOG_SALT: process.env.LOG_SALT || `xinyu-redteam-${crypto.randomBytes(8).toString('hex')}`,
+      XINYU_TOKEN: SERVER_TOKEN,
     }),
     stdio: ['ignore', fd, fd]
   });
@@ -619,7 +624,8 @@ function runTurn({ port, sessionId, message, timeoutMs }) {
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(body),
-        Accept: 'text/event-stream'
+        Accept: 'text/event-stream',
+        'X-XinYu-Token': SERVER_TOKEN,
       }
     }, (res) => {
       res.setEncoding('utf8');
