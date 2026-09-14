@@ -24,6 +24,7 @@ const {
   pushPendingTurn
 } = require('../infra/sessions');
 const { checkInputSafety, checkOutputSafety } = require('../safety');
+const { parseImage } = require('./image');
 const { chooseStrategy, updateSessionState, buildRoute, updateEngageLadder } = require('../strategy');
 const { buildSystemPrompt, PROMPT_VERSION } = require('../pipeline/prompts');
 const { PERSONA_VERSION } = require('../domain/persona');
@@ -100,9 +101,13 @@ function prepareTurn(body) {
   const riskHistory = getRiskHistory(sessionId);
   // 图片 ↔ 危机分级的接入点（2026-09-14 建立）：图片功能尚未落地，此处恒为 false，
   // 一旦接口层透传 body.image / body.imageSignals，分级自动生效（铁律见 safety.js：只升不降）。
+  // 图片：白名单 + 大小校验（不通过就回中文错误，不进模型）
+  const img = parseImage(body);
+  if (!img.ok) return { error: img.error };
   const inputSafety = checkInputSafety(fullMessage, {
     riskHistory,
-    hasImage: !!(body && (body.image || body.imageData)),
+    hasImage: !!img.image,
+    // 视觉安全信号由 HTTP 层预计算（packages/pipeline/vision）后回填；缺失即按「含图 → L1」处理
     imageSignals: (body && body.imageSignals) || null
   });
   const state = getState(sessionId);
@@ -113,7 +118,10 @@ function prepareTurn(body) {
   const route = buildRoute(inputSafety.riskLevel, decision, state);
   const explicit = handleExplicitMemory(fullMessage);
 
-  return { message, fullMessage, sessionId, inputSafety, decision, route, state, explicit, retry, retryDedup };
+  return {
+    message, fullMessage, sessionId, inputSafety, decision, route, state, explicit, retry, retryDedup,
+    image: img.image, imageMeta: { mime: img.mime, bytes: img.bytes }
+  };
 }
 
 function buildMessages(history) {
@@ -251,7 +259,9 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
   // 关键：当前这句话还没写进会话（在 finalizeTurn 才落库），必须显式追加，
   // 否则模型看不到用户最新的一条消息。
   const history = buildMessages(getHistory(sessionId));
-  history.push({ role: 'user', text: message });
+  history.push(ctx.image
+    ? { role: 'user', text: message, image: ctx.image }   // 图片只进本轮请求，不写会话
+    : { role: 'user', text: message });
 
   let content = '';
   let usage = null;
@@ -320,12 +330,13 @@ function finalizeTurn(ctx, result, t0) {
   // 未命中（retryDedup.ok === false）时按普通请求处理，照常追加。
   const reusedUserTurn = !!(ctx.retry && ctx.retryDedup && ctx.retryDedup.ok);
   if (!reusedUserTurn) {
-    addTurn(sessionId, 'user', message, { riskLevel: inputSafety.riskLevel, strategy: decision.key });
+    addTurn(sessionId, 'user', message, { riskLevel: inputSafety.riskLevel, strategy: decision.key, hasImage: !!ctx.image });
   }
   addTurn(sessionId, 'assistant', result.reply, {
     riskLevel: inputSafety.riskLevel,
     strategy: decision.key,
-    blocked: result.blocked
+    blocked: result.blocked,
+    hasImage: !!ctx.image
   });
   pushPendingTurn(sessionId, message, result.reply);
   logCall({

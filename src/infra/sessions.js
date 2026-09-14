@@ -86,7 +86,13 @@ function ensureSession(sessionId) {
 function addTurn(sessionId, role, text, meta = {}) {
   const s = ensureSession(sessionId);
   if (!s) return null;
-  const turn = { role, text, ...meta, time: now() };
+  // 🔴 图片与视觉信号**一律不落盘**：base64 会撑大 JSON（且加密后还会膨胀），
+  // 落库只保留 hasImage 这类布尔标记（由调用方写入 meta）。这里是防御性剥离。
+  const cleanMeta = Object.assign({}, meta);
+  delete cleanMeta.image;
+  delete cleanMeta.imageData;
+  delete cleanMeta.imageSignals;
+  const turn = { role, text, ...cleanMeta, time: now() };
   s.turns.push(turn);
   if (s.turns.length > MAX_TRANSCRIPT_TURNS) s.turns = s.turns.slice(-MAX_TRANSCRIPT_TURNS);
   s.updatedAt = now();

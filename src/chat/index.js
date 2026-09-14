@@ -27,8 +27,25 @@ const {
 } = require('./pipeline');
 const { startSSE, createWriter } = require('./http');
 const { flushPendingExtraction } = require('./extractor');
+const { parseImage } = require('./image');
+const { screenImage } = require('../pipeline/vision');
 
 const router = express.Router();
+
+
+/**
+ * 图片侧安全信号预计算（fail-safe）：任何异常都不影响主流程。
+ * 设计：筛查只产出「可升级」的信号，交给 safety.js 的 applyImageFloor 做「就高不就低」；
+ * 筛查失败/超时 → 不设置 imageSignals → 含图轮仍由 L1 地板兜住。
+ */
+async function attachImageSignals(body) {
+  try {
+    const img = parseImage(body);
+    if (!img.ok || !img.image) return;
+    const signals = await screenImage({ image: img.image });
+    if (signals) body.imageSignals = signals;
+  } catch (e) { /* fail-safe：筛查失败不阻断 */ }
+}
 
 // ── 非流式接口（兼容保留，前端降级时使用）──────────────────────
 router.post('/', async (req, res) => {
@@ -36,6 +53,7 @@ router.post('/', async (req, res) => {
   const t0 = Date.now();
   let ctx = null;
   try {
+    await attachImageSignals(req.body);
     ctx = prepareTurn(req.body);
     if (ctx.error) return res.status(400).json({ ok: false, error: ctx.error });
     ctx.requestId = requestId;
@@ -77,6 +95,7 @@ router.post('/stream', async (req, res) => {
   const requestId = crypto.randomUUID();
   const t0 = Date.now();
 
+  await attachImageSignals(req.body);
   const ctx = prepareTurn(req.body);
   if (ctx.error) return res.status(400).json({ ok: false, error: ctx.error });
   ctx.requestId = requestId;
