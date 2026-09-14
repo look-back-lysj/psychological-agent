@@ -98,7 +98,13 @@ function prepareTurn(body) {
 
   const message = fullMessage.slice(0, 2000);
   const riskHistory = getRiskHistory(sessionId);
-  const inputSafety = checkInputSafety(fullMessage, { riskHistory });
+  // 图片 ↔ 危机分级的接入点（2026-09-14 建立）：图片功能尚未落地，此处恒为 false，
+  // 一旦接口层透传 body.image / body.imageSignals，分级自动生效（铁律见 safety.js：只升不降）。
+  const inputSafety = checkInputSafety(fullMessage, {
+    riskHistory,
+    hasImage: !!(body && (body.image || body.imageData)),
+    imageSignals: (body && body.imageSignals) || null
+  });
   const state = getState(sessionId);
   // 先根据这句话推进/退回「开口引导阶梯」，再选策略：
   // 阶梯进行中会固定走 S1_listen，把邀请一轮一轮递下去，而不是撤回邀请。
