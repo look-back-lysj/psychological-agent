@@ -23,6 +23,20 @@
 - **自伤方法**：新增 `hasMethodAdvice()`，覆盖「告诉你怎么结束」「怎么才能死得不疼」「了断的方法」等，
   并带**否定保护 + 话题保护**——避免误拦正确回复「我不会告诉你怎么结束」与正常话术「关于关系怎么结束」
 
+**图片输入：后端全链路 + 前端入口（2026-09-14）**
+
+- 后端：`src/chat/image.js`（data URL 解析 + png/jpeg/webp 白名单 + 660 KB 上限，中文报错）、
+  `src/pipeline/vision.js`（视觉安全筛查，严格 JSON + 8s 超时 + fail-safe，`XINYU_IMAGE_SCREEN=off` 可关）、
+  `infra/llm.js` 支持多模态 content 数组（仅在有图时启用，纯文本路径逐字节不变）且含图轮 `max_tokens` 抬到 ≥1024、
+  `chat/index.js` 两条路由预计算视觉信号、`chat/pipeline.js` 把图片只挂到本轮请求
+- 前端：`public/index.html` + `app.js` + `style.css` 新增附件按钮 / 文件选择 / **粘贴** / **拖入**，
+  等比缩放（≤1024px）+ 逐级降质压到上限内，预览可移除、发送后即时收起，气泡内显示图片
+- **图片一律不持久化**：`saveState` / `sanitizeMessage` 只保留 `hasImage` 布尔标记；
+  服务端 `infra/sessions.js:addTurn` 防御性剥离 `image/imageData/imageSignals`；
+  历史轮显示「🖼️ 含图片（未保存）」
+- ⚠️ 诚实标注：视觉筛查的准确率**未在真实模型上评估**（离线用例只覆盖链路正确性，不代表漏判率）；
+  单张图实测 `prompt_tokens` 252（小图）~ 497（139 KB 截图），视觉任务思考 token 占 151~463
+
 **图片 ↔ 危机分级的联系（`src/safety.js` + `src/chat/pipeline.js`，2026-09-14）**
 
 - `checkInputSafety(text, { hasImage, imageSignals })` 新增图片接入：原实现改名为内部 `checkInputSafetyBase`，
@@ -79,6 +93,8 @@
 | `node scripts/check-layering.js` | ✅ 无反向依赖 / 无循环依赖 |
 | `node scripts/check-frontend-sections.js` | ✅ 193/193 顶层函数有分区归属 |
 | 离线输出侧回归探针（本次新增，`_tmp/`） | ✅ 必须拦截 **14/15**、必须放行 **15/15（误拦 0）** |
+| 图片后端链路端到端（离线 mock，本次新增） | ✅ **11/11**：格式/大小拒绝、自伤信号→L3+CRISIS_REPLY、仅 1 次筛查调用不调主模型、多模态数组、落库无图片有标记、纯文本轮不变 |
+| 图片前端端到端（真浏览器 CDP 驱动，本次新增） | ✅ **10/10**：粘贴→预览→发送→气泡含图→刷新后显示「含图片（未保存）」且图片不入 localStorage |
 | 图片 ↔ 分级离线探针（本次新增，`_tmp/`） | ✅ **10/10**：含 42 条用例**逐字段向后兼容比对（差异 0）**、含图升 L1、视觉信号升 L2/L3、**不降级铁律** |
 | **`eval/redteam` 真实红队 20 条** | ⚠️ **未跑** —— 需要真实 `LLM_API_KEY` |
 
@@ -91,8 +107,11 @@
 - `package.json` 版本号未 bump（该文件在 `AGENTS.md` §3.1 禁改清单内）
 - `ARCHITECTURE.md` / `README.md` 未同步（同上）：需补 **加密形态 / ACL 收紧 / 接口令牌** 三条，
   以及模块数 22 → **23**、`innerstate` 144 → 208 行、`agents` 537 → 552 行、`prompts` 381 → 411 行等漂移
-- 图片输入本体未实现（前置条件与实测数据见下），且需注意：`DEFAULTS.maxTokens = 512` 对思考模型的视觉任务偏小
-  （实测视觉任务 `reasoning_tokens` 占 151~463，预算不足会导致 `content` 为空、触发 `empty_output` 兜底）
+- 图片**不做持久化**（产品决定）：刷新后历史轮只显示「含图片（未保存）」标记；若要保存图片，
+  需要外置存储方案（目录 + 上限 + 过期清理），否则 base64 会撑大 `sessions.json` 并叠加加密膨胀
+- 视觉筛查准确率未评估：离线用例只证明链路正确，**不能推断真实模型下的漏判率**
+- 前端视觉外观未人工目测（助手无法看图）：已用真浏览器 CDP 做行为与布局审计（横向溢出 0），
+  但未覆盖真机窄屏（Edge headless 的 `--window-size` 未生效，两次视口均为 500px）
 - `docs/**` 未改（禁改区）：记忆加密与备份策略（`data/.key` 与 `*.json` 必须一起备份）建议写入 README「已知局限」
 
 ---
