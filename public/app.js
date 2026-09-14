@@ -57,7 +57,7 @@
  *  五、安全 Markdown 渲染          786      3      renderMarkdown renderInline isBlockStart
  *  六、本地多会话（localStorage）   918     12      loadState saveState getSession createSession
  *  七、渲染：消息/会话/标题/空状态  1105     21      buildMessageEl renderMessages renderSessionList
- *  八、滚动 / 输入框 / Toast       1525     11      scrollToBottom autosize toast
+ *  八、滚动 / 输入框 / Toast       1525     15      scrollToBottom autosize attachFile compressImage
  *  九、SSE 解析                   1660      3      drainBlocks splitEvents parseEventLines
  *  十、流式渲染调度                1723      2      scheduleAssistantRender flushAssistantRender
  *  十一、网络：流式+降级+健康检查    1743      6      applyStreamEvent streamChat fetchNonStream
@@ -74,7 +74,7 @@
  *  二十、桌面外壳（Tauri）          3589      5      initDesktopShell bindTitlebar syncMaximizeIcon
  *  二十一、初始化                 3686      1      init
  * ---------------------------------------------------------------
- *  合计：25 个分区标记 / 192 个顶层 function。
+ *  合计：25 个分区标记 / 197 个顶层 function（2026-09-14 图片功能后更新；行号以 checker 输出为准）。
  *  机检：`node scripts/check-frontend-sections.js`（发现未归属函数则退出码 1）。
  *
  * 「我想改 X」速查：
@@ -295,6 +295,11 @@
     form: $('chat-form'),
     input: $('message'),
     sendBtn: $('send-btn'),
+    attachImage: $('attach-image'),
+    attachInput: $('attach-input'),
+    attachPreview: $('attach-preview'),
+    attachThumb: $('attach-thumb'),
+    attachRemove: $('attach-remove'),
     toasts: $('toasts'),
     scrim: $('scrim'),
 
@@ -1025,6 +1030,8 @@
       content: typeof raw.content === 'string' ? raw.content : String(raw.content == null ? '' : raw.content),
       ts: Number(raw.ts) || now(),
     };
+    // 图片只恢复「标记」，绝不从 localStorage 复原图片本体（图片从不落盘）
+    if (raw.hasImage === true) msg.hasImage = true;
     if (role === 'assistant') {
       if (raw.strategy) msg.strategy = String(raw.strategy);
       if (raw.strategyLabel) msg.strategyLabel = String(raw.strategyLabel);
@@ -1148,6 +1155,7 @@
           .map((m) => {
             const o = { role: m.role, content: m.content, ts: m.ts };
             if (m.strategy) o.strategy = m.strategy;
+            if (m.hasImage) o.hasImage = true;   // 只留标记（图片本身不落 localStorage）
             if (m.strategyLabel) o.strategyLabel = m.strategyLabel;
             if (m.riskLevel) o.riskLevel = m.riskLevel;
             if (m.blocked) o.blocked = true;
@@ -1247,6 +1255,14 @@
     const article = makeEl('article', 'msg msg--user');
     const body = makeEl('div', 'msg__body');
     const bubble = makeEl('div', 'msg__bubble');
+    if (msg.image) {
+      const im = makeEl('img', 'msg__image');
+      im.src = msg.image;
+      im.alt = '发送的图片';
+      bubble.appendChild(im);
+    } else if (msg.hasImage) {
+      bubble.appendChild(makeEl('div', 'msg__image-chip', '🖼️ 含图片（未保存）'));
+    }
     const content = makeEl('div', 'msg__content', msg.content || '');
     bubble.appendChild(content);
     body.appendChild(bubble);
@@ -1755,6 +1771,70 @@
     el.messages.setAttribute('aria-busy', busy ? 'true' : 'false');
   }
 
+  // ── 图片附件（仅本轮发送；不落 localStorage、不落服务端）────────────
+  const IMAGE_MAX_CHARS = 900000;   // 与服务端 src/chat/image.js 的上限保持一致
+  const IMAGE_MAX_EDGE = 1024;      // 等比缩放到最长边不超过该像素
+  let pendingImage = null;
+
+  function clearPendingImage() {
+    pendingImage = null;
+    if (el.attachThumb) el.attachThumb.removeAttribute('src');
+    if (el.attachPreview) el.attachPreview.hidden = true;
+  }
+
+  function showPendingImage(dataUrl) {
+    pendingImage = dataUrl;
+    if (el.attachThumb) el.attachThumb.src = dataUrl;
+    if (el.attachPreview) el.attachPreview.hidden = false;
+  }
+
+  /** 等比缩放 + 逐级降质量，压到上限内；失败返回 null */
+  function compressImage(file) {
+    return new Promise(function (resolve) {
+      const reader = new FileReader();
+      reader.onerror = function () { resolve(null); };
+      reader.onload = function () {
+        const img = new Image();
+        img.onerror = function () { resolve(null); };
+        img.onload = function () {
+          try {
+            const scale = Math.min(1, IMAGE_MAX_EDGE / Math.max(img.width, img.height));
+            const w = Math.max(1, Math.round(img.width * scale));
+            const h = Math.max(1, Math.round(img.height * scale));
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0, w, h);
+            let q = 0.85;
+            let out = canvas.toDataURL('image/jpeg', q);
+            while (out.length > IMAGE_MAX_CHARS && q > 0.4) {
+              q -= 0.15;
+              out = canvas.toDataURL('image/jpeg', q);
+            }
+            resolve(out.length <= IMAGE_MAX_CHARS ? out : null);
+          } catch (e) { resolve(null); }
+        };
+        img.src = String(reader.result || '');
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function attachFile(file) {
+    if (!file) return;
+    if (['image/png', 'image/jpeg', 'image/webp'].indexOf(file.type) < 0) {
+      toast('只支持 png / jpeg / webp 图片', 'error');
+      return;
+    }
+    const dataUrl = await compressImage(file);
+    if (!dataUrl) { toast('这张图片太大了，压缩后仍超出上限（约 660 KB）', 'error'); return; }
+    showPendingImage(dataUrl);
+    toast('已附加图片，可继续输入文字后发送');
+  }
+
   /* ============================================================
    * 九、SSE 解析（按空行分块，块内逐行解析）
    * ============================================================ */
@@ -1920,9 +2000,10 @@
     const res = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json', 'Accept': 'text/event-stream' }),
-      body: JSON.stringify({ message: text, sessionId: sessionId, retry: isRetry === true }),
+      body: JSON.stringify({ message: text, sessionId: sessionId, retry: isRetry === true, image: pendingImage || undefined }),
       signal: signal,
     });
+    clearPendingImage();   // 图片已随本次请求发出，预览即时收起
     if (!res.ok) throw new Error('stream_http_' + res.status);
     if (!res.body || typeof res.body.getReader !== 'function') throw new Error('stream_no_body');
 
@@ -1965,9 +2046,10 @@
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ message: text, sessionId: sessionId, retry: isRetry === true }),
+      body: JSON.stringify({ message: text, sessionId: sessionId, retry: isRetry === true, image: pendingImage || undefined }),
       signal: signal,
     });
+    clearPendingImage();
     if (!res.ok) throw new Error('http_' + res.status);
     const json = await res.json();
     if (!json || json.ok !== true || !json.data) throw new Error('bad_payload');
@@ -2156,7 +2238,11 @@
     const session = ensureActive();
 
     // 用户消息
-    session.messages.push({ role: 'user', content: text, ts: now() });
+    session.messages.push({
+      role: 'user', content: text, ts: now(),
+      image: pendingImage || undefined,   // 仅内存：saveState 不落 localStorage
+      hasImage: !!pendingImage
+    });
     if (!session.title || session.title === DEFAULT_TITLE) {
       session.title = truncateTitle(text);
     }
@@ -2723,6 +2809,35 @@
     }
 
     // 输入区
+    // 图片附件：按钮 / 文件选择 / 粘贴 / 拖入（选完立刻清空 input，允许连续选同一张）
+    if (el.attachImage && el.attachInput) {
+      el.attachImage.addEventListener('click', function () { el.attachInput.click(); });
+      el.attachInput.addEventListener('change', function () {
+        const f = el.attachInput.files && el.attachInput.files[0];
+        el.attachInput.value = '';
+        if (f) attachFile(f);
+      });
+    }
+    if (el.attachRemove) el.attachRemove.addEventListener('click', clearPendingImage);
+    if (el.input) {
+      el.input.addEventListener('paste', function (e) {
+        const items = (e.clipboardData && e.clipboardData.items) || [];
+        for (let i = 0; i < items.length; i += 1) {
+          if (items[i].type && items[i].type.indexOf('image/') === 0) {
+            const f = items[i].getAsFile();
+            if (f) { e.preventDefault(); attachFile(f); }
+            return;
+          }
+        }
+      });
+    }
+    if (el.form) {
+      el.form.addEventListener('dragover', function (e) { e.preventDefault(); });
+      el.form.addEventListener('drop', function (e) {
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) { e.preventDefault(); attachFile(f); }
+      });
+    }
     if (el.form) el.form.addEventListener('submit', function (e) { e.preventDefault(); submitMessage(); });
     // 发送键：按压缩放 + 涟漪（pointerdown 比 click 更跟手；禁用态不会触发）
     if (el.sendBtn) {

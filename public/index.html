@@ -164,13 +164,25 @@
       </section>
 
       <footer class="composer">
+        <div class="composer__attach" id="attach-preview" hidden>
+          <img id="attach-thumb" alt="待发送的图片预览" />
+          <button class="composer__attach-remove" id="attach-remove" type="button" aria-label="移除图片">✕</button>
+        </div>
         <form class="composer__form" id="chat-form">
+          <button class="composer__icon" id="attach-image" type="button" aria-label="发送图片" title="发送图片（也可直接粘贴或拖入）">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6" />
+              <circle cx="8.6" cy="10" r="1.6" fill="currentColor" />
+              <path d="M4.6 17.4l4.7-4.1 3.5 2.9 3.1-2.6 4.5 3.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+          </button>
+          <input type="file" id="attach-input" accept="image/png,image/jpeg,image/webp" hidden />
           <textarea id="message" rows="1" placeholder="说说现在的感受…" autocomplete="off" aria-label="输入消息"></textarea>
           <button class="send-btn" id="send-btn" type="submit" aria-label="发送消息" disabled>
             <svg class="icon"><use href="#i-send" /></svg>
           </button>
         </form>
-        <p class="composer__hint"><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行 · <kbd>?</kbd> 快捷键 · 内容仅存于本机</p>
+        <p class="composer__hint"><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行 · <kbd>?</kbd> 快捷键 · 内容仅存于本机 · 图片不保存、仅本轮发送</p>
       </footer>
     </main>
   </div>
