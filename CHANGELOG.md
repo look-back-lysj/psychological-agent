@@ -23,6 +23,19 @@
 - **自伤方法**：新增 `hasMethodAdvice()`，覆盖「告诉你怎么结束」「怎么才能死得不疼」「了断的方法」等，
   并带**否定保护 + 话题保护**——避免误拦正确回复「我不会告诉你怎么结束」与正常话术「关于关系怎么结束」
 
+**图片 ↔ 危机分级的联系（`src/safety.js` + `src/chat/pipeline.js`，2026-09-14）**
+
+- `checkInputSafety(text, { hasImage, imageSignals })` 新增图片接入：原实现改名为内部 `checkInputSafetyBase`，
+  公开入口 `checkInputSafety` 变为薄包装器 → **导出名与返回结构不变**，无图片时行为与改前逐字段一致
+- **铁律：图片与视觉模型判定只能升级风险、永不降级**（由 `applyImageFloor` 实现「就高不就低」）
+  - 含图片（`hasImage`）→ 不低于 **L1 关注**（`strategy.js` 的情绪分下限抬到 3，策略自然偏向倾听而非建议）
+  - `imageSignals.distressVisible` → 不低于 **L2**
+  - `imageSignals.selfHarmVisible` → 直接 **L3 危机协议**（自动附 `CRISIS_REPLY`）
+  - 文本侧已判 L2/L3 时图片信号**不得降低**等级；矛盾输入（未标 `hasImage` 但有自伤信号）按 fail-safe 升级
+- 设计前提（写进代码注释）：规则层无法从图片判定风险、视觉模型判断不可信（只能升）、图片属敏感数据
+- `src/chat/pipeline.js` 已接好传参；图片输入功能尚未落地，故当前恒为 false、不影响现有行为
+- ⚠️ **未做**：图片输入本体（前端入口 / 接口字段 / 模型 payload 多模态 / 图片外置存储）
+
 **本机数据静态加密（新增 `src/infra/atrest.js`，2026-09-12）**
 
 - AES-256-GCM + 本机密钥 `data/.key`（32 字节，写盘后收紧 ACL）
@@ -66,6 +79,7 @@
 | `node scripts/check-layering.js` | ✅ 无反向依赖 / 无循环依赖 |
 | `node scripts/check-frontend-sections.js` | ✅ 193/193 顶层函数有分区归属 |
 | 离线输出侧回归探针（本次新增，`_tmp/`） | ✅ 必须拦截 **14/15**、必须放行 **15/15（误拦 0）** |
+| 图片 ↔ 分级离线探针（本次新增，`_tmp/`） | ✅ **10/10**：含 42 条用例**逐字段向后兼容比对（差异 0）**、含图升 L1、视觉信号升 L2/L3、**不降级铁律** |
 | **`eval/redteam` 真实红队 20 条** | ⚠️ **未跑** —— 需要真实 `LLM_API_KEY` |
 
 > ⚠️ **如实标注**：`AGENTS.md` 对 `src/safety.js`（R6）要求的验证包含「红队 20 条、红线硬命中必须 0、
@@ -77,6 +91,8 @@
 - `package.json` 版本号未 bump（该文件在 `AGENTS.md` §3.1 禁改清单内）
 - `ARCHITECTURE.md` / `README.md` 未同步（同上）：需补 **加密形态 / ACL 收紧 / 接口令牌** 三条，
   以及模块数 22 → **23**、`innerstate` 144 → 208 行、`agents` 537 → 552 行、`prompts` 381 → 411 行等漂移
+- 图片输入本体未实现（前置条件与实测数据见下），且需注意：`DEFAULTS.maxTokens = 512` 对思考模型的视觉任务偏小
+  （实测视觉任务 `reasoning_tokens` 占 151~463，预算不足会导致 `content` 为空、触发 `empty_output` 兜底）
 - `docs/**` 未改（禁改区）：记忆加密与备份策略（`data/.key` 与 `*.json` 必须一起备份）建议写入 README「已知局限」
 
 ---
