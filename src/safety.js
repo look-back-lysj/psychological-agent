@@ -263,8 +263,49 @@ const SAFE_COVERT = {
   strategy: 'S6_referral'
 };
 
+// ── 归一化缓存（性能；只改「算几次」，不改「算成什么」）────────────
+// normalizeText 是纯函数，但内部要跑两条全串正则。实测热点：
+//   短句(11 字)   → 单次 checkInputSafety 触发 345 次 normalizeText
+//   长段落(500 字) → 触发 6469 次，但只有 174 个不同参数（97.3% 是纯重复计算）
+// 重复的来源有两类，都不需要重算：
+//   1) 词表项（L3_DIRECT / MEANS_SEEK …）是模块级常量，归一化结果恒定，
+//      却在**每个分句**被 containsAny 重算一遍 → O(分句数 × 词表长度) 次；
+//   2) 整句 / 分句缓冲在同一轮内被 splitRiskClauses.flush 与 collectRiskEvidence
+//      重复归一化（flush 里一次就算三遍）。
+// 词表整体归一化一次（WeakMap 缓存，键是词表数组本身），把「每词一次哈希
+// 查找」降为「每次调用一次 WeakMap 查找 + 朴素循环」；命中率 100%，因为
+// 全部调用点传的都是模块级常量数组。
+const NORM_CACHE_MAX = 1024;
+const _normWordsCache = new WeakMap();
+function normWords(words) {
+  let arr = _normWordsCache.get(words);
+  if (arr === undefined) {
+    arr = words.map(w => normalizeText(w));
+    _normWordsCache.set(words, arr);
+  }
+  return arr;
+}
+const _textNormCache = new Map();
+function normText(text) {
+  const k = text == null ? '' : String(text);
+  let v = _textNormCache.get(k);
+  if (v === undefined) {
+    v = normalizeText(k);
+    if (_textNormCache.size >= NORM_CACHE_MAX) _textNormCache.clear();
+    _textNormCache.set(k, v);
+  }
+  return v;
+}
+
 function containsAny(normalized, words) {
-  return words.some(w => normalized.includes(normalizeText(w)));
+  // ⚠️ 全部调用点传的都是模块级常量词表（见 collectRiskEvidence 与 checkInputSafety），
+  //    因此按「词表数组」缓存归一化结果是安全的；
+  //    若将来传入动态词表，需要改回逐词 normWord。
+  const list = normWords(words);
+  for (let i = 0; i < list.length; i++) {
+    if (normalized.includes(list[i])) return true;
+  }
+  return false;
 }
 
 function matchesAny(normalized, patterns) {
@@ -364,7 +405,7 @@ function crisisResult(reason, reply) {
  * 用于把关「整句级委婉表达」的兜底：整句在讲论文、电影时，不因跨分句命中而升级。
  */
 function eventsAreDiscussion(raw) {
-  const t = normalizeText(raw);
+  const t = normText(raw);
   return discussionSource(t) && !SELF_PREDICATE.test(t);
 }
 
@@ -413,9 +454,25 @@ function isNegatedAt(text, index, word) {
 // 已说明为过去 / 气话的撤回：独立成函数，便于临时性波动走降级、不污染主否定链
 const RESOLVED_PAST = /(?:刚才|刚刚|刚才那一下|之前|先前|早先)(?:的)?(?:我)?(?:有些|有点|曾经|一度|当时|那次)/;
 
+// affirmativeMatch 每次调用都要把静态 pattern 重新编译成 g 版本。
+// pattern 全是模块级常量（词表里的正则），用 WeakMap 缓存编译结果；
+// 因为带 g 标志，exec 会用 lastIndex，所以每次用前显式归零 —— 语义与
+// 「每次 new 一个新正则」完全一致（旧实现的 lastIndex 恒为 0）。
+// ⚠️ 不要给缓存的实例加 sticky/unicode 之类改造，lastIndex 归零是唯一契约。
+const _globalReCache = new WeakMap();
+function toGlobalRe(pattern) {
+  let re = _globalReCache.get(pattern);
+  if (re === undefined) {
+    re = new RegExp(pattern.source, 'g');
+    _globalReCache.set(pattern, re);
+  }
+  re.lastIndex = 0;
+  return re;
+}
+
 function affirmativeMatch(text, patterns) {
   return patterns.some(pattern => {
-    const re = new RegExp(pattern.source, 'g');
+    const re = toGlobalRe(pattern);
     let hit;
     while ((hit = re.exec(text))) {
       if (!isNegatedAt(text, hit.index, hit[0])) return true;
@@ -424,29 +481,69 @@ function affirmativeMatch(text, patterns) {
   });
 }
 
+// stripNegatedAndFigurativeRisk 的前两条也是函数内字面量，每个分句重建一次。
+// 两条都带 /g，只用于 .replace()（replace 会重置 lastIndex），提到模块级安全。
+const STRIP_FIGURATIVE = /去死皮|自杀式(?:刷题|学习|加班|复习)|不想活在(?:别人的)?(?:期待|压力|规则|眼光|阴影)里/g;
+const STRIP_OTHER_CURSE = /(?:你|他|她|别人|有人)去死/g;
+
 function stripNegatedAndFigurativeRisk(text) {
   return text
-    .replace(/去死皮|自杀式(?:刷题|学习|加班|复习)|不想活在(?:别人的)?(?:期待|压力|规则|眼光|阴影)里/g, '')
-    .replace(/(?:你|他|她|别人|有人)去死/g, '')
+    .replace(STRIP_FIGURATIVE, '')
+    .replace(STRIP_OTHER_CURSE, '')
     .replace(RISK_TERM_PATTERN, (word, index, whole) => isNegatedAt(whole, index, word) ? '' : word);
 }
 
+// 学术/文艺讨论的三个判据：旧实现把它们写成函数体内的正则字面量，
+// 每次调用 discussionSource 都要新建 3 个 RegExp；而 discussionSource 在
+// 每个分句、以及每个引号入栈处都会被调用，是高频路径。字面量无 g/y 标志，
+// 提到模块级后 .test() 无状态，行为完全一致。
+const DISCUSSION_SOURCE_A = /(?:论文|文献|教材|电影|小说|新闻|报道|台词|课程|科普|案例|诗里|剧本)/;
+const DISCUSSION_SOURCE_B = /(?:研究|讨论|分析|讲|里|中|台词|内容|预防|干预|案例|科普)/;
+const DISCUSSION_SOURCE_C = /(?:研究|讨论|分析|学习|科普)(?:的?是|一下|过|如何|怎么)?(?:自杀|轻生|自伤|自残)(?:的|预防|干预|定义|现象)/;
+
 function discussionSource(text) {
-  return /(?:论文|文献|教材|电影|小说|新闻|报道|台词|课程|科普|案例|诗里|剧本)/.test(text) &&
-    /(?:研究|讨论|分析|讲|里|中|台词|内容|预防|干预|案例|科普)/.test(text) ||
-    /(?:研究|讨论|分析|学习|科普)(?:的?是|一下|过|如何|怎么)?(?:自杀|轻生|自伤|自残)(?:的|预防|干预|定义|现象)/.test(text);
+  return DISCUSSION_SOURCE_A.test(text) &&
+    DISCUSSION_SOURCE_B.test(text) ||
+    DISCUSSION_SOURCE_C.test(text);
 }
 
 // 只修复已知词内部的短分隔，不把全文拼接；保留引号及真正句界。
+// ⚠️ 旧实现在循环里对**每个词**现拼 `new RegExp(词拆字 + gap + 后缀, 'g')`，
+//    于是每次调用都要编译 ~60 个正则并对全文各扫一遍（实测长文本 1070 次
+//    运行时 RegExp 构造）。词表是模块级常量，这里一次性预编译。
+//    String.replace 对 /g 正则会自行重置 lastIndex，复用同一实例安全。
+const FRAGMENT_GAP = String.raw`[\s\u200b-\u200f\ufeff，,。.!！?？;；、:_-]{0,3}`;
+const RISK_FRAGMENT_FIXERS = RISK_TERMS.map(word => ({
+  word,
+  first: word[0],
+  re: new RegExp(
+    Array.from(word).join(FRAGMENT_GAP) +
+    (word.endsWith('杀') ? '(?!菌|虫|价|青)' : word.endsWith('死') ? '(?!皮|海)' : ''),
+    'g'
+  )
+}));
+
 function repairRiskFragments(raw) {
   let text = String(raw);
-  const gap = String.raw`[\s\u200b-\u200f\ufeff，,。.!！?？;；、:_-]{0,3}`;
-  for (const word of RISK_TERMS) {
-    const re = new RegExp(Array.from(word).join(gap) + (word.endsWith('杀') ? '(?!菌|虫|价|青)' : word.endsWith('死') ? '(?!皮|海)' : ''), 'g');
-    text = text.replace(re, () => word);
+  for (const fixer of RISK_FRAGMENT_FIXERS) {
+    // 首字剪枝：该词的正则完全由词字符构成，原文里连首字都没有时**必然**不匹配。
+    // 用 indexOf（原生快扫）替代整趟正则扫描，结果可证明不变。
+    if (text.indexOf(fixer.first) < 0) continue;
+    text = text.replace(fixer.re, () => fixer.word);
   }
   return text;
 }
+
+// 分句用的三条切分规则 + 两个单字符判据：同样是函数内字面量，每次调用重建。
+// 前三条只用于 .replace(/g)，后两条只用于 .test()（无 g 标志，无状态）。
+const CLAUSE_BREAK_CONTRAST = /但是|不过|可是|然而/g;
+const CLAUSE_BREAK_CONTRAST2 = /(?:但|可)(?=我|他|她|今晚|现在|刚|已经|仍|还)/g;
+const CLAUSE_BREAK_SELF = /(?<!说|是)(?<=[\u4e00-\u9fff])(?=(?:我(?:刚刚|刚才|已经|不想活|想死|今晚|现在)|现在(?:又|还|已经|好多|没事|安全)|今晚(?:还是|仍然)))/g;
+const CLAUSE_BREAK_CHARS = /[，,。.!！?？;；\n]/;
+const CLAUSE_SENTENCE_END = /[。.!！?？;；\n]/;
+// 引号入栈时判定「前句是否自述」「是否第三方转述」的三个判据
+const QUOTE_SELF_LEAD = /^(?:我|本人)(?:告诉|对|跟|向)/;
+const QUOTE_SAY_LEAD = /说|问|告诉|发来|留言/;
 
 function splitRiskClauses(raw) {
   const clauses = [];
@@ -458,18 +555,22 @@ function splitRiskClauses(raw) {
   let contrast = false;
   const closing = { '“': '”', '「': '」', '『': '』', '‘': '’', '"': '"' };
   function flush() {
-    if (normalizeText(buffer)) {
-      clauses.push({ text: normalizeText(buffer), sentenceStart, sentenceId, contrast, quote: quoteStack[quoteStack.length - 1] || null });
-      previous = normalizeText(buffer);
+    // 旧实现对同一个 buffer 归一化 3 次（判空 / 存 text / 存 previous），
+    // 三次结果必然相同；改成算一次复用。previous 存的仍是归一化后的串，
+    // 后续 quoteStack 的 discussionSource(previous) 依赖这一点，语义不变。
+    const t = normText(buffer);
+    if (t) {
+      clauses.push({ text: t, sentenceStart, sentenceId, contrast, quote: quoteStack[quoteStack.length - 1] || null });
+      previous = t;
       sentenceStart = false;
       contrast = false;
     }
     buffer = '';
   }
   // 转折与显式主体/时间切换也形成边界，避免无标点的「去年…现在…」。
-  const text = repairRiskFragments(raw).replace(/但是|不过|可是|然而/g, '∥')
-    .replace(/(?:但|可)(?=我|他|她|今晚|现在|刚|已经|仍|还)/g, '∥')
-    .replace(/(?<!说|是)(?<=[\u4e00-\u9fff])(?=(?:我(?:刚刚|刚才|已经|不想活|想死|今晚|现在)|现在(?:又|还|已经|好多|没事|安全)|今晚(?:还是|仍然)))/g, '，');
+  const text = repairRiskFragments(raw).replace(CLAUSE_BREAK_CONTRAST, '∥')
+    .replace(CLAUSE_BREAK_CONTRAST2, '∥')
+    .replace(CLAUSE_BREAK_SELF, '，');
   for (const char of text) {
     const top = quoteStack[quoteStack.length - 1];
     if (top && char === top.close) {
@@ -477,13 +578,13 @@ function splitRiskClauses(raw) {
     } else if (closing[char]) {
       flush();
       quoteStack.push({ close: closing[char], discussion: !!(top && top.discussion) || discussionSource(previous),
-        subject: top ? top.subject : (/^(?:我|本人)(?:告诉|对|跟|向)/.test(previous) ? 'self' :
-          THIRD_SUBJECT.test(previous) && /说|问|告诉|发来|留言/.test(previous) ? 'third_party' : null) });
+        subject: top ? top.subject : (QUOTE_SELF_LEAD.test(previous) ? 'self' :
+          THIRD_SUBJECT.test(previous) && QUOTE_SAY_LEAD.test(previous) ? 'third_party' : null) });
     } else if (char === '∥') {
       flush(); contrast = true;
-    } else if (/[，,。.!！?？;；\n]/.test(char)) {
+    } else if (CLAUSE_BREAK_CHARS.test(char)) {
       flush();
-      if (/[。.!！?？;；\n]/.test(char)) { sentenceStart = true; sentenceId += 1; }
+      if (CLAUSE_SENTENCE_END.test(char)) { sentenceStart = true; sentenceId += 1; }
     } else {
       buffer += char;
     }
@@ -492,16 +593,43 @@ function splitRiskClauses(raw) {
   return clauses;
 }
 
+// clauseSubject 里那条正则由字符串拼出来（旧实现每次调用重新编译），
+// 但它的源串是常量，提到模块级预编译；无 g 标志，exec 无状态残留。
+const THIRD_SUBJECT_TAIL = new RegExp(
+  '(?:' + THIRD_SUBJECT.source + ')(?=给我|跟我|对我|向我|说|表示|告诉|问|发来|留言|不想|想|不|没|会|要|准备|打算|已经|刚|正在|吞|喝|服|割|划|去年|以前|曾经|现在|今晚|明天|最近|活着|$)'
+);
+// 同处用到的另两个判据
+const SUBJECT_HARM_BEFORE = /帮我|替我|照顾|伤害|杀|捅|联系/;
+const SUBJECT_SELF_START = /^(?:我|本人)(?!们)/;
+
 function clauseSubject(text, inherited, quote) {
   if (quote && quote.subject) return quote.subject;
   // 「我朋友说他…」是第三方；「室友…我刚刚…」在分句时已切开。
-  const third = new RegExp('(?:' + THIRD_SUBJECT.source + ')(?=给我|跟我|对我|向我|说|表示|告诉|问|发来|留言|不想|想|不|没|会|要|准备|打算|已经|刚|正在|吞|喝|服|割|划|去年|以前|曾经|现在|今晚|明天|最近|活着|$)').exec(text);
+  const third = THIRD_SUBJECT_TAIL.exec(text);
   const self = SELF_PREDICATE.exec(text);
-  if (third && !/帮我|替我|照顾|伤害|杀|捅|联系/.test(text.slice(0, third.index)) &&
+  if (third && !SUBJECT_HARM_BEFORE.test(text.slice(0, third.index)) &&
       (!self || third.index < self.index)) return 'third_party';
-  if (self || /^(?:我|本人)(?!们)/.test(text)) return 'self';
+  if (self || SUBJECT_SELF_START.test(text)) return 'self';
   return inherited || 'self';
 }
+
+// collectRiskEvidence 里其余的判据字面量：原本每个分句重建一次 RegExp。
+// 全部无 g/y 标志且只用于 .test()，提到模块级无状态残留，行为不变。
+const CONTRAST_ALREADY = /已经|已/;
+const SOURCE_ATTRIBUTION = /(?:电影|小说|教材|剧本|诗)(?:里|中).{0,14}(?:说|台词|角色)|(?:台词|例句)是/;
+const PLANNED_ATTEMPT_INTENT = /(?:想|要|打算|准备|如果|假如)(?:要|去)?(?:吞|服|喝|吃)/;
+const METHOD_SEEK_SUFFIX = /(?:最不疼|哪种方式最快|办法是什么)/;
+const DANGEROUS_METHOD = /最不疼|哪种方式最快|成功率最高|不容易被发现|不被发现/;
+const BENIGN_ACTIVITY = /(?:出差|毕业|搬家|旅行|旅游|看星星|看风景|去外地工作|(?:离开|走出|走回|回到)(?:了)?(?:宿舍|教室|会场|电影院))/;
+const SOFT_EXERCISE_EXCLUDE = /跑|运动|八百米|爬楼|鼻塞|哮喘/;
+const TOPIC_BOUNDARY = /论文|作业|编织|做饭|露营地点|医生的电话|电影散场/;
+const TIME_ANCHOR_NOW = /今晚|明天|马上|现在|等会|今天晚上|这个周末/;
+const FINALITY_NOW = /(?:今晚|马上|现在|等会).{0,6}(?:就)?(?:结束|了结)(?:了)?$/;
+// evaluateRiskGroup 内的三条
+const SELF_HARM_NOW_STEP = /(?:正在|已经|刚刚|刚才|准备|打算|计划|要)(?:去)?(?:自杀|自伤|自残|轻生|跳楼|伤害自己)/;
+const VAGUE_METHOD_TRIAL = /别劝我|找个时间试试|我想.*试试/;
+const LETHAL_REQUEST_PILL = /安眠药/;
+const LETHAL_REQUEST_WAKE = /不用醒|不再醒|别再醒|不想醒/;
 
 function collectRiskEvidence(raw) {
   const evidence = [];
@@ -512,7 +640,7 @@ function collectRiskEvidence(raw) {
   let past = false;
   // 跨分句的构式（夸张语气、委婉表达）在**整句**上判定：分句按逗号切开后，
   // 「如果我消失了，就没人能难过了」两段会被拆到两个分句里，任何单句正则都命中不了。
-  const wholeText = normalizeText(raw);
+  const wholeText = normText(raw);
   const wholeEuphemism = matchesAny(wholeText, EUPHEMISM_PATTERNS);
   const wholeDiscussion = eventsAreDiscussion(raw);
   for (const clause of splitRiskClauses(raw)) {
@@ -526,7 +654,7 @@ function collectRiskEvidence(raw) {
     entity = nextEntity;
     const historical = PAST_TIME.test(n);
     if (historical) past = true;
-    else if (CURRENT_TIME.test(n) || clause.contrast && /已经|已/.test(n)) past = false;
+    else if (CURRENT_TIME.test(n) || clause.contrast && CONTRAST_ALREADY.test(n)) past = false;
     // 🔴 实测误报（旧版判 L3）：「刚才气得想死，现在好多了」。
     // 旧版 PAST_TIME 不含「刚才 / 刚刚」，「刚才」只落在 CURRENT_TIME 里，
     // 于是这句被当成「当前正在发生的意念」。补进 PAST_TIME 后注意一个反噬：
@@ -536,12 +664,12 @@ function collectRiskEvidence(raw) {
     const resolvedPast = RESOLVED_PAST.test(n) || (past && RESOLVED_PAST.test(n));
     const quotedDiscussion = !!(clause.quote && clause.quote.discussion);
     // 讨论词只能约束这一个事件；真实本人陈述和真实第三方求助不因此被整段清空。
-    const sourceAttribution = /(?:电影|小说|教材|剧本|诗)(?:里|中).{0,14}(?:说|台词|角色)|(?:台词|例句)是/.test(n);
+    const sourceAttribution = SOURCE_ATTRIBUTION.test(n);
     const discussion = quotedDiscussion || sourceAttribution || (discussionSource(n) && !SELF_PREDICATE.test(n));
     const active = stripNegatedAndFigurativeRisk(n);
     const unsafe = affirmativeMatch(n, UNSAFE_NOW_PATTERNS);
     const harmfulAction = affirmativeMatch(n, CURRENT_ATTEMPT_PATTERNS);
-    const plannedAttempt = harmfulAction && /(?:想|要|打算|准备|如果|假如)(?:要|去)?(?:吞|服|喝|吃)/.test(n);
+    const plannedAttempt = harmfulAction && PLANNED_ATTEMPT_INTENT.test(n);
     const attempt = harmfulAction && !plannedAttempt;
     const otherHarm = affirmativeMatch(n, OTHER_HARM_PATTERNS);
     // 明确词（L3_DIRECT）不受夸张豁免影响，也不受频率限定降级；
@@ -559,15 +687,15 @@ function collectRiskEvidence(raw) {
     const urge = affirmativeMatch(active, SELF_HARM_URGE_PATTERNS);
     const means = LETHAL_OBJECT.test(n);
     const prepared = affirmativeMatch(n, PREPARED_PATTERNS);
-    const method = containsAny(active, MEANS_SEEK) || /(?:最不疼|哪种方式最快|办法是什么)/.test(active);
-    const dangerousMethod = /最不疼|哪种方式最快|成功率最高|不容易被发现|不被发现/.test(active);
+    const method = containsAny(active, MEANS_SEEK) || METHOD_SEEK_SUFFIX.test(active);
+    const dangerousMethod = DANGEROUS_METHOD.test(active);
     const goodbye = matchesAny(active, GOODBYE_PATTERNS);
-    const benignActivity = /(?:出差|毕业|搬家|旅行|旅游|看星星|看风景|去外地工作|(?:离开|走出|走回|回到)(?:了)?(?:宿舍|教室|会场|电影院))/.test(n);
+    const benignActivity = BENIGN_ACTIVITY.test(n);
     const quietExit = containsAny(active, L3_QUIET_EXIT);
     const soft = L2_COVERT.filter(word => active.includes(word) &&
-      !(word === '喘不过气' && /跑|运动|八百米|爬楼|鼻塞|哮喘/.test(n)));
+      !(word === '喘不过气' && SOFT_EXERCISE_EXCLUDE.test(n)));
     // 显式新话题和引用边界切断证据组合；同为本人或第三方并不等于同一事件。
-    const topicBoundary = /论文|作业|编织|做饭|露营地点|医生的电话|电影散场/.test(n) &&
+    const topicBoundary = TOPIC_BOUNDARY.test(n) &&
       !direct && !harmfulAction && !otherHarm && !unsafe && !urge && !soft.length;
     if (topicBoundary || discussion || wasDiscussion) eventId += 1;
     wasDiscussion = discussion;
@@ -578,8 +706,8 @@ function collectRiskEvidence(raw) {
       ideationSoft: attenuated, qualified: FREQUENCY_QUALIFIER.test(n),
       protective: PROTECTIVE_FACTOR.test(n), resolvedPast: !!resolvedPast,
       soft, escalator: containsAny(active, L3_ESCALATORS), watch: containsAny(active, L1_WATCH),
-      time: /今晚|明天|马上|现在|等会|今天晚上|这个周末/.test(n),
-      finality: /(?:今晚|马上|现在|等会).{0,6}(?:就)?(?:结束|了结)(?:了)?$/.test(active),
+      time: TIME_ANCHOR_NOW.test(n),
+      finality: FINALITY_NOW.test(active),
       death: containsAny(active, DIE_LEXICON),
       departure: containsAny(active, DEPARTURE_SOFT), departureContext: containsAny(active, DEPARTURE_CONTEXT),
       // 已实施危害不能被「现在稳定 / 按医嘱」等另一句的保护声明抹掉。
@@ -622,13 +750,13 @@ function evaluateRiskGroup(events, subject, history) {
   // 但「刀在手边」本身就是「手段可得（means access）」这一临床高危因子，
   // 单独出现就足以进入危机协议。放宽为：致死物 + 已筹备 → 直接 L3。
   const lethalMeansReady = has('means') && has('prepared') && !has('exclamative');
-  const vagueMethod = has('dangerousMethod') && active.some(e => /别劝我|找个时间试试|我想.*试试/.test(e.active));
-  const lethalRequest = active.some(e => /安眠药/.test(e.active) && /不用醒|不再醒|别再醒|不想醒/.test(e.active));
+  const vagueMethod = has('dangerousMethod') && active.some(e => VAGUE_METHOD_TRIAL.test(e.active));
+  const lethalRequest = active.some(e => LETHAL_REQUEST_PILL.test(e.active) && LETHAL_REQUEST_WAKE.test(e.active));
   if (lethalMeansReady) return emergency('当前已出现可用的致死手段与筹备行为，优先确认安全并联系现实支持。', 'means_ready', 76);
   if (methodRequest || vagueMethod || lethalRequest) return emergency('出现危险方式探询，拒绝提供方法并优先关注安全。', 'method_request', 75);
   if (preparedPlan) return emergency('当前具体手段筹备与伤害或危险告别证据相连。', 'current_plan', 75);
   if (has('direct')) {
-    if (!third || active.some(e => e.direct && (e.time || affirmativeMatch(e.active, [/(?:正在|已经|刚刚|刚才|准备|打算|计划|要)(?:去)?(?:自杀|自伤|自残|轻生|跳楼|伤害自己)/])))) {
+    if (!third || active.some(e => e.direct && (e.time || affirmativeMatch(e.active, [SELF_HARM_NOW_STEP])))) {
       return emergency('出现当前求死或自伤信号，进入危机安全协议。', 'current_ideation', 70);
     }
     return { result: riskResult(RISK.L2, '第三方出现求死或自伤信号，需要联系现实中的支持者共同判断安全。', { subject }), priority: 20 };
@@ -675,7 +803,7 @@ function evaluateRiskGroup(events, subject, history) {
  */
 function checkInputSafety(text, options) {
   const raw = String(text == null ? '' : text);
-  const n = normalizeText(raw);
+  const n = normText(raw);
   const history = options && Array.isArray(options.riskHistory) ? options.riskHistory : [];
   const evidence = collectRiskEvidence(raw);
   const groups = new Map();
