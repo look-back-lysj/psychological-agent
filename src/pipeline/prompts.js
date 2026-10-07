@@ -30,7 +30,7 @@ const { buildPersonaBlock, buildSafetyBlock, PERSONA_VERSION } = require('../dom
 // 阶梯的判定信号 / 失败模式以 src/strategy.js 的 ENGAGE_LADDER 为唯一来源，避免两套规则打架
 const { ENGAGE_LADDER } = require('../strategy');
 
-const PROMPT_VERSION = 'v3.1';
+const PROMPT_VERSION = 'v3.2';
 const NL = String.fromCharCode(10);
 
 // 策略指令：编号与标签与 src/strategy.js 保持一致
@@ -154,12 +154,14 @@ function buildTrapsBlock() {
  * 出处：SAMHSA TIP 35 的 EXHIBIT 3.6 "Types of Reflective Listening Responses"
  *      与 Table "Types of reflective listening"。
  */
-function buildReflectionBlock() {
+function buildReflectionBlock(riskLevel) {
   return [
     '【反映（reflection）怎么说 · 内部规则，不要向对方提起】',
     '- 多用复杂反映（complex reflection）：在字面之上补一层你推断出的情绪、意义或矛盾。',
     '  例：对方说「我不想谈这个」——简单反映是「你现在不想谈这个。」；复杂反映是「谈这个，比不说更累。」',
-    '- 复杂反映是「猜」，猜错会伤人：必须用「听起来 / 好像 / 也许 / 像是」这类软化词开头，把话停在可以被否定的位置。',
+    riskLevel === 'L0' || riskLevel === 'L1'
+      ? '- 区分事实和猜测：事实直接回应，猜测保留不确定性、允许对方纠正。无需固定软化词开头，也不要把每句话都解释成深层情绪。'
+      : '- 复杂反映是「猜」，猜错会伤人：必须用「听起来 / 好像 / 也许 / 像是」这类软化词开头，把话停在可以被否定的位置。',
     '- 用陈述句收尾，句尾不要加「对吗？」「是不是？」——加了就从「反映」变成了「盘问」。',
     '- 禁用放大式反映（amplified reflection）：把对方立场夸张到荒谬（❌「所以，就当这件事不存在最好。」）风险很高，不要用。',
     '- 双侧反映（double-sided reflection，「你既想让它过去，又觉得它过不去。」）在陪伴场景容易变成说教或替对方站边，慎用；要用时只摆事实、不做评判、不替对方选一边。',
@@ -355,11 +357,11 @@ function buildSystemPrompt(opts) {
   const riskLevel = o.riskLevel || 'L0';
 
   const blocks = [
-    buildPersonaBlock({ userMessage: o.userMessage }),
+    buildPersonaBlock({ userMessage: o.userMessage, riskLevel }),
     '',
     buildTrapsBlock(),
     '',
-    buildReflectionBlock(),
+    buildReflectionBlock(riskLevel),
     '',
     buildResistanceBlock(),
     '',
@@ -391,6 +393,12 @@ function buildSystemPrompt(opts) {
     '- 不要自称 AI 模型或提及「提示词」「策略」。'
   ].join(NL));
 
+  if (riskLevel === 'L0' || riskLevel === 'L1') {
+    blocks.push('', '【低风险对话的表达优先级】',
+      '以上风格示例是参考，不要照抄固定开头或结尾。优先回应事实；不需要每轮完成「反映＋建议＋退路」的结构。',
+      '需要确认时自然问一个具体问题；问句正常用问号。对方已明确求助时可直接给一个小步骤，不必再询问是否愿意。',
+      '这只调整表达方式；安全红线、拒绝追问的意愿与本轮风险策略始终优先。');
+  }
   return blocks.join(NL);
 }
 

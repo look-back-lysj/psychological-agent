@@ -71,7 +71,7 @@ function createWriter(res, controller) {
       const size = base + Math.floor(Math.random() * 3);
       if (!send('delta', { text: text.slice(i, i + size) })) return false;
       i += size;
-      await new Promise(r => setTimeout(r, 10 + Math.random() * 8));
+      await new Promise(r => setTimeout(r, (24 + Math.random() * 16) / 0.6));
     }
     return true;
   };

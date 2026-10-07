@@ -281,6 +281,7 @@
     chatTitle: $('chat-title'),
     statusPill: $('status-pill'),
     chat: $('chat'),
+    chatTyping: $('chat-typing'),
     messages: $('messages'),
     messagesEnd: $('messages-end'),
     srLive: $('sr-live'),
@@ -396,6 +397,7 @@
   let activeController = null; // 当前流式请求的 AbortController
   let pending = null;          // 正在流式更新的助手消息 { session, msg, index, el }
   let rafId = 0;               // 流式渲染的 requestAnimationFrame 句柄
+  const lastScrollPositions = new WeakMap();
   let stickBottom = true;      // 是否自动吸附到底部
   let messagesEndObserver = null; // 底部锚点观察器：用户上滚即暂停跟随
   let composing = false;       // 输入法组合中
@@ -1505,6 +1507,7 @@
     article.classList.toggle('msg--error', !!msg.error);
     article.classList.toggle('msg--blocked', !!msg.blocked);
     article.classList.toggle('msg--typing', !msg.content && !!msg.streaming);
+    article.style.display = !msg.content && msg.streaming ? 'none' : '';
 
     const sig = msg.streaming
       ? 's|' + (msg.content || '') + '|' + (msg.waitingText || '')
@@ -1624,6 +1627,12 @@
     if (el.chatTitle) el.chatTitle.textContent = (session && session.title) || DEFAULT_TITLE;
   }
 
+  function setTypingStatus(visible) {
+    if (!el.chatTyping) return;
+    el.chatTyping.hidden = !visible;
+    el.chatTyping.setAttribute('aria-hidden', visible ? 'false' : 'true');
+  }
+
   function updateWelcome(session) {
     setHidden(el.welcome, !!(session && session.messages.length));
   }
@@ -1657,6 +1666,7 @@
       node.style.scrollBehavior = 'auto';
       node.scrollTop = node.scrollHeight;
       node.style.scrollBehavior = prev;
+      lastScrollPositions.set(node, node.scrollTop);
     });
   }
 
@@ -1718,14 +1728,24 @@
         if (!stickBottom) { stickBottom = true; updateScrollButton(); }
         return;
       }
-      if (stickBottom) { stickBottom = false; updateScrollButton(); }
+      // 布局增长也会让锚点离开视野，不能据此认定用户向上翻阅。
+      if (stickBottom) scrollToBottom(false);
     }, { root: el.chat, threshold: 0, rootMargin: '0px' });
     try { messagesEndObserver.observe(anchor); } catch (e) { /* 忽略：阈值法兜底 */ }
   }
 
-  function handleScroll() {
-    // 有 IntersectionObserver 时以底部锚点为准；没有时退回 56px 阈值法。
-    if (!messagesEndObserver) stickBottom = isNearBottom();
+  function handleScroll(event) {
+    const node = event && event.currentTarget;
+    if (node) {
+      const previous = lastScrollPositions.get(node);
+      const current = node.scrollTop;
+      lastScrollPositions.set(node, current);
+      if (previous !== undefined && current < previous - 2 && !isNearBottom()) {
+        stickBottom = false;
+      } else if (isNearBottom()) {
+        stickBottom = true;
+      }
+    }
     updateScrollButton();
   }
 
@@ -2163,31 +2183,22 @@
 
   async function startGeneration(text, session, assistant, isRetry) {
     generating = true;
+    setTypingStatus(true);
+    updateTitle(session);
     setMessagesBusy(true);
     syncComposer();
 
     const controller = new AbortController();
     activeController = controller;
     let aborted = false;
-    let waitTimer = 0;
+
 
     try {
       // 不在请求前人为等待：占位/打字信号覆盖真实网络与模型延迟。
-      // 若 900ms 内没有第一个 delta，再把占位换成「我在听」。
+      // 等待状态显示在顶部标题，收到正文后恢复会话标题。
       assistant.gotDelta = false;
       assistant.waitingText = '';
       if (controller.signal.aborted) { aborted = true; return; }
-
-      // 首字兜底：900ms 内没有第一个 delta，就把占位文案换成更自然的一句
-      waitTimer = window.setTimeout(function () {
-        if (assistant.done || assistant.gotDelta || !assistant.streaming) return;
-        assistant.waitingText = WAIT_TEXT;
-        // 直接渲染一次：后台标签页里 rAF 可能被节流，兜底文案不能等下一帧
-        try {
-          flushAssistantRender();
-          if (stickBottom) scrollToBottom(false);
-        } catch (e) { /* 渲染异常不影响请求 */ }
-      }, FIRST_TOKEN_MS);
 
       const finished = await streamChat(text, session.id, assistant, controller.signal, isRetry);
       if (!finished && !controller.signal.aborted) {
@@ -2212,7 +2223,7 @@
         }
       }
     } finally {
-      if (waitTimer) window.clearTimeout(waitTimer);
+
       // 中止可能表现为“抛 AbortError”“流提前结束”两种，统一以 signal 判定
       const stopped = aborted || controller.signal.aborted;
       if (stopped) {
@@ -2224,7 +2235,7 @@
       setMessagesBusy(false);
       generating = false;
       if (activeController === controller) activeController = null;
-      try { syncComposer(); autosize(); } catch (e) { /* 忽略 */ }
+      try { setTypingStatus(false); updateTitle(getSession(activeId)); syncComposer(); autosize(); } catch (e) { /* 忽略 */ }
     }
   }
 
@@ -2272,7 +2283,7 @@
     updateWelcome(session);
     stickBottom = true;
     updateScrollButton();
-    scrollToBottom(true);
+    scrollToBottom(false);
     saveState();
 
     const index = session.messages.length - 1;

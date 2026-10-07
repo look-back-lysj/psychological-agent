@@ -275,16 +275,17 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
     usage = r.usage;
   }
 
-  // 「校」的调用条件（v3.2 起收敛为唯一一个）：本地规则 localScreen() 命中。
-  // 未命中（issues 为空）→ 这里**不会**调用 review()，本轮只跑「观」+「书」（minimal 档只跑「书」）。
-  // 命中时 review() 的职责是「直接重写」，不是输出评审意见。
-  const issues = localScreen(content, plan, shape);
-  let critic = { triggered: false, issues, revised: false, safety: false };
-  if (issues.length) {
+  // 低风险仅安全问题触发重写；高风险保持原本的本地快检条件。
+  const issues = localScreen(content, plan, shape, { riskLevel });
+  const lowRisk = riskLevel === 'L0' || riskLevel === 'L1';
+  const draftSafety = lowRisk && (issues.some(isSafetyIssue) || isSafetyDraft(content));
+  let critic = { triggered: false, issues, revised: false, safety: !!draftSafety };
+  // L0/L1 纯风格问题只记录；安全命中仍重写。L2/L3 保持原触发条件。
+  if (lowRisk ? draftSafety : issues.length) {
     // 安全类命中（亲昵称呼 / 永久承诺等，与 safety.js 的 OUTPUT_BLOCK_PATTERNS 重叠）照常调「校」；
     // 即便「校」降级返回原稿，后面的 checkOutputSafety() 仍会独立拦截 —— 安全兜底不依赖「校」。
     // isSafetyDraft 直接复用 checkOutputSafety 的口径，避免被 localScreen「只报第一个 cliche」掩盖。
-    const safety = issues.some(isSafetyIssue) || isSafetyDraft(content);
+    const safety = draftSafety || issues.some(isSafetyIssue) || isSafetyDraft(content);
     const rv = await review({ userText: message, strategyKey, riskLevel }, content);
     critic = {
       triggered: true,
@@ -296,7 +297,7 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
     if (rv.revised) { content = rv.revised; critic.revised = true; }
     // 触发「校」后档位升级为 reviewed（共 3 次调用）
     tier = 'reviewed';
-    tierReason = tierReason + '；本地快检命中（' + issues.slice(0, 2).join('、') + '），追加「校」重写';
+    tierReason = tierReason + '；' + (safety ? '输出安全检查命中' : '本地快检命中（' + issues.slice(0, 2).join('、') + '）') + '，追加「校」重写';
   }
 
   const agent = attachRetryMeta({

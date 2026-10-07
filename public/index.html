@@ -127,6 +127,11 @@
         </div>
       </header>
 
+        <div class="chat__typing" id="chat-typing" role="status" aria-live="polite" hidden>
+          <span class="chat__typing-dot" aria-hidden="true"></span>
+          <span>对方正在输入中</span>
+        </div>
+
       <section class="chat" id="chat" aria-label="对话内容">
         <div class="messages" id="messages" role="log" aria-live="polite" aria-relevant="additions text" aria-label="对话记录" aria-busy="false"></div>
         <div id="sr-live" class="sr-only" role="status" aria-live="polite"></div>

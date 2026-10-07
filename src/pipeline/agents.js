@@ -46,7 +46,7 @@ const { checkOutputSafety } = require('../safety');
 
 // v3.2：①「校」明确为「仅本地命中才调用、且只做重写」；②补两条 L0 低信息量跳过「观」的条件
 //       （去标点后为空 / 同一字符重复 ≤12 字）；③新增 isSafetyIssue() 供调用点标注安全类命中。
-const AGENT_VERSION = 'v3.3';
+const AGENT_VERSION = 'v3.4';
 
 /**
  * 是否启用多智能体流水线。
@@ -411,11 +411,16 @@ const AI_CLICHE = [
 /**
  * 快速本地筛查：返回问题列表（空数组 = 通过）。
  */
-function localScreen(draft, plan, shape) {
+function localScreen(draft, plan, shape, options = {}) {
   const text = String(draft || '').trim();
   const issues = [];
   if (!text) return ['empty'];
-  const n = normalizeText(text);
+  // 仅低风险风格分析忽略配对引号；安全检查始终读取完整原文。
+  const lowRisk = options.riskLevel === 'L0' || options.riskLevel === 'L1';
+  const styleText = lowRisk
+    ? text.replace(/“[^”]*”|「[^」]*」|『[^』]*』|"[^"]*"/g, '')
+    : text;
+  const n = normalizeText(styleText);
   const maxChars = (shape && shape.maxChars) || 180;
   // 上限是「说话形态」的软护栏，不是逐字裁切；只有明显超出才触发重写。
   const tooLongLimit = Math.max(maxChars + 80, Math.round(maxChars * 1.5));
@@ -426,12 +431,15 @@ function localScreen(draft, plan, shape) {
     if (n.includes(normalizeText(c))) { issues.push('cliche:' + c); break; }
   }
   if (plan && plan.askQuestion === false && /[?？]\s*$/.test(text)) issues.push('asked_when_should_not');
-  // 说话指纹硬约束（来自 106 条真实台词统计）
+  // 风格观测项：低风险轮只记录，高风险保持原重写路径。
   if (/[!！]/.test(text)) issues.push('exclamation');
   if (text.indexOf('——') !== -1) issues.push('dash');
   const ellipsis = (text.match(/……/g) || []).length;
   if (ellipsis > 2) issues.push('too_many_ellipsis:' + ellipsis);
-  if (text.indexOf('为什么') !== -1) issues.push('why_question');
+  const whyText = lowRisk
+    ? styleText.replace(/(?:不用|不必|别|不要)(?:急着)?(?:去)?(?:想|问|追问|纠结)[^。！？?]*为什么/g, '')
+    : text;
+  if (whyText.indexOf('为什么') !== -1) issues.push('why_question');
   // 复述对方原话过多（超过 24 字连续重复）会显得机械
   return issues;
 }
