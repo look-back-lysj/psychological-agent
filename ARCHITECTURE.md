@@ -70,6 +70,92 @@ node _tmp/dep-graph.js --check  # 只检查环，有环退出码非 0
 
 ---
 
+## 0.5 v4.0 新增模块（2026-10-10）
+
+v4.0 在保留安全层（`safety.js`）与评测体系不变的前提下，新增 4 个对话层模块 + 2 个数据资产 + 1 个 RAG 脚本：
+
+### 新增源码文件
+
+| 文件 | 行数 | 职责 | 层级 |
+| --- | --- | --- | --- |
+| `src/pipeline/strategy-cards.js` | 143 | S0~S6 策略意图卡（含心理学出处 MI-G/EX3.6/Ivey） | pipeline L3 |
+| `src/pipeline/style-retriever.js` | 312 | 风格检索层：从语料库检索示例 + AI 味提醒（0.14ms，0 次 LLM 调用） | pipeline L3 |
+| `src/pipeline/prompts-v4.js` | 172 | `buildPromptV4()` 单段式提示词组装（≈700 token，替代旧版 ≈2,500 token） | pipeline L3 |
+| `src/pipeline/output-guard.js` | 221 | 输出后检：安全拦截（调 safety.js）+ AI 味本地快检（100% 覆盖，替代失效的「校」） | pipeline L3 |
+
+### 修改的现有文件
+
+| 文件 | 改动 |
+| --- | --- |
+| `src/chat/pipeline.js` | +95/−14：新增 `v4Enabled()` 分流，XINYU_V4=on 时走新链路（跳过「观」「校」），默认路径不变 |
+| `src/pipeline/prompts.js` | 止血：`buildPlanBlock()` 返回空（删形态 KPI）；修心理学出处（roll with resistance → coming alongside；双侧反映示例） |
+| `src/domain/persona.js` | 止血：修 4 组互斥规则（省略号配额/「我在」/最多至少推进/重复条款） |
+
+### 新增数据资产
+
+| 文件 | 大小 | 内容 |
+| --- | --- | --- |
+| `data/style-corpus.json` | 24KB | 60 条风格语料（persona 原生 21 + CPsyCounD 20 + MI/Ivey 官方 19），每条标注心理学技术 |
+| `data/ai-slop-list.json` | 14KB | 19 条中文 AI 味禁用清单（WRONG/RIGHT 对照 + 检测正则） |
+
+### 新增脚本与文档
+
+| 文件 | 内容 |
+| --- | --- |
+| `scripts/rag/build_rag.py` | 心理学 RAG 构建（Chroma + BGE-small-zh，221 文档索引），构建时校验 + 答辩演示 |
+| `docs/psychology-basis.md` | 心理学基础文档（929 行）：16 技术详解 + 7 策略详解 + 10 术语修正 + 60 语料对照 |
+| `devlog/day17.md` | v4.0 重造全过程记录 |
+
+### v4.0 数据流（XINYU_V4=on 时）
+
+```
+用户输入 → 输入安全检查（safety.js，不变）→ 策略路由 S0~S6（strategy.js，不变）
+  │
+  ├─ L3 危机 → 固定危机协议（不变，0 次模型调用）
+  │
+  └─ L0~L2 ↓
+       │
+       ▼
+  StyleRetriever（style-retriever.js，0.14ms，0 次 LLM 调用）
+       │  从 style-corpus.json 检索 3~5 条风格示例
+       │  从 ai-slop-list.json 检索 2~3 条 AI 味提醒
+       ▼
+  buildPromptV4（prompts-v4.js，≈700 token）
+       │  ① 角色卡（连贯叙述）
+       │  ② 策略意图卡（strategy-cards.js）
+       │  ③ 风格示例 3~5 条
+       │  ④ AI 味提醒 2~3 条
+       │  ⑤ 安全红线（persona.js buildSafetyBlock，不变）
+       ▼
+  「书」Composer（1 次 LLM 调用，流式）
+       ▼
+  OutputGuard（output-guard.js，本地规则，0 次 LLM 调用）
+       │  ① checkOutputSafety（safety.js，不变）
+       │  ② AI 味快检（ai-slop-list.json 正则，命中高危→兜底话术，中低危→记录）
+       ▼
+  流式下发
+```
+
+### v3.4 vs v4.0 对比
+
+| 维度 | v3.4 旧架构 | v4.0 新架构 |
+| --- | --- | --- |
+| LLM 调用次数 | 2~3 次（观/书/校） | **1 次**（书） |
+| system prompt 长度 | ≈2,500 token / 213 条约束 | **≈700 token / ≈30 条** |
+| 规则:语料 | 8.7 : 1 | **≈1 : 1** |
+| 首字延迟 | ~1.9s | **~0.9s**（估算减半） |
+| AI 味防线 | 「校」实测触发率 5% | **OutputGuard 100% 覆盖** |
+| 心理学出处 | 1 处（有误） | **7 条权威出处** |
+
+### 切换方式
+
+```powershell
+$env:XINYU_V4=''on''; npm start    # v4.0 新链路
+Remove-Item Env:\XINYU_V4; npm start   # v3.4 旧链路（默认）
+```
+
+---
+
 ## 1. ★ 数据流：一条消息从输入到回复
 
 以**流式路径**（`POST /api/chat/stream`，前端默认走这条）为例。
