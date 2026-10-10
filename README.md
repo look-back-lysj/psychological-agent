@@ -139,6 +139,47 @@ L1 不退场 → L2 观察式反映 → L3 降门槛 → L4 二选一 → L5 正
 
 同时保留 `XINYU_AGENTS=off` 开关：关掉后退回单模型路径（不跑「观」与「校」），用于 A/B 对照——用来验证多这一层到底有没有用，而不是默认它有用。
 
+### v4.0 对话层重造（实验性）
+
+v4.0 在保留安全层（`safety.js`）与评测体系不变的前提下，对对话层做了底层重造。设 `XINYU_V4=on` 启用新链路：
+
+| 维度 | v3.4 旧架构 | v4.0 新架构 |
+| --- | --- | --- |
+| LLM 调用次数 | 2~3 次（观/书/校） | **1 次**（书） |
+| system prompt 长度 | ≈2,500 token / 213 条约束 | **≈700 token / ≈30 条** |
+| 规则:语料 | 8.7 : 1 | **≈1 : 1** |
+| 首字延迟 | ~1.9s | **~0.9s**（估算减半） |
+| 心理学出处 | 1 处（有误） | **7 条权威出处** |
+
+核心变化：
+
+1. **删掉「观」Appraiser 的形态 KPI**：不再把共情编码成 `emotion=happy/强度=3/180字` 的填表作业（实证零收益，棱角在编码步被磨平）
+2. **删掉「校」Rewriter**：实测触发率仅 5%，AI 腔在低风险场景没有自动防线；替换为 OutputGuard 本地规则快检（100% 覆盖，0 次 LLM 调用）
+3. **规则清单 → 风格语料**：213 条原子约束（4 组互斥）→ 角色卡（连贯叙述）+ 60 条风格语料（StyleRetriever 检索式注入，单轮 0.14ms）
+4. **心理学出处完整**：每个策略标注 MI/Ivey 权威技术出处，废弃术语已修正（roll with resistance → coming alongside），详见 `docs/psychology-basis.md`
+
+数据资产：
+
+| 文件 | 内容 |
+| --- | --- |
+| `data/style-corpus.json` | 60 条风格语料（persona 原生 21 + CPsyCounD 20 + MI/Ivey 官方 19），每条标注心理学技术 |
+| `data/ai-slop-list.json` | 19 条中文 AI 味禁用清单（WRONG/RIGHT 对照 + 检测正则） |
+| `docs/psychology-basis.md` | 心理学基础文档（930 行）：16 个技术详解 + 7 策略详解 + 术语修正记录 |
+
+心理学 RAG（构建时校验 + 答辩演示，不影响运行时）：
+
+```bash
+python scripts/rag/build_rag.py              # 建库（221 文档）
+python scripts/rag/build_rag.py --query "复杂反映怎么用"  # 测试检索
+```
+
+A/B 对比只需设/不设环境变量：
+
+```powershell
+$env:XINYU_V4='on'; npm start    # 新链路
+Remove-Item Env:\XINYU_V4; npm start   # 旧链路
+```
+
 ---
 
 ## 隐私边界
