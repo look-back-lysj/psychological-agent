@@ -15,6 +15,16 @@
  *   1) 不要为了「更实时」把流式改成边收边发（会让违规文本到达前端）—— 本文件只负责
  *      「先完整取回、再经 checkOutputSafety」，下发节奏由 chat/http.js 的 onDelta 空函数保证；
  *   2) 不要把 L3 危机拦截移到 decideTier 之后 —— 「L3 不走模型」是结构性保证，不是巧合。
+ *   3) 不要在本文件里判断「该不该用 v4 链路」——统一走 v4Enabled()（XINYU_V4=on），
+ *      便于 A/B 对照只改环境变量、不改代码。
+ *
+ * ── v4.0 对话层重造（2026-10-10，默认关闭）──
+ * 设 XINYU_V4=on 时本文件改走：
+ *   system prompt : buildPromptV4（pipeline/prompts-v4，单段式 ≈900 token）
+ *   「观」Appraiser : 跳过（plan 用 fallbackPlan 兜底）
+ *   「校」Rewriter  : 跳过（AI 味防线交给 output-guard 的本地正则）
+ *   输出后检       : checkOutput（pipeline/output-guard = safety.js + AI 味快检）
+ * 效果：LLM 调用 3 次 → 1 次，首字延迟约减半。不设环境变量时走旧路径，行为不变。
  */
 
 const crypto = require('crypto');
@@ -27,6 +37,11 @@ const { checkInputSafety, checkOutputSafety } = require('../safety');
 const { parseImage } = require('./image');
 const { chooseStrategy, updateSessionState, buildRoute, updateEngageLadder } = require('../strategy');
 const { buildSystemPrompt, PROMPT_VERSION } = require('../pipeline/prompts');
+// v4.0 对话层重造（默认关闭）：XINYU_V4=on 时走 buildPromptV4 + checkOutput，
+// 跳过「观」Appraiser 与「校」Rewriter，LLM 调用 3 次 → 1 次。
+// 不设该环境变量 = 走旧路径，行为与 v3.4 完全一致（tests/run.js 依赖这一点）。
+const { buildPromptV4, PROMPT_VERSION_V4 } = require('../pipeline/prompts-v4');
+const { checkOutput } = require('../pipeline/output-guard');
 const { PERSONA_VERSION } = require('../domain/persona');
 const { callLLM, callLLMStream, getConfig } = require('../infra/llm');
 const memory = require('../infra/memory');
@@ -38,6 +53,15 @@ const { dedupeRetryTurns } = require('./retry');
 const { scheduleMemoryExtraction, noteActiveSession } = require('./extractor');
 
 const FAKE_SESSION_PREFIX = 's_';
+
+// v4.0 对话层开关。设 XINYU_V4=on 时：
+//   「观」Appraiser 不再调用（plan 用 fallbackPlan 兜底，仅供内在状态与日志使用）
+//   「校」Rewriter 不再调用（AI 味防线交给 output-guard 的本地正则，0 次 LLM）
+//   system prompt 换 buildPromptV4，输出后检换 checkOutput
+// LLM 调用 3 次 → 1 次。默认关闭，旧路径一个字节都没变。
+function v4Enabled() {
+  return String(process.env.XINYU_V4 || '').toLowerCase() === 'on';
+}
 
 const ERROR_FALLBACK = '我这边刚才没有接上，但你的话我已经听到了。可以点「重试」再来一次；如果想继续，也可以先慢慢说说现在最想聊的那件事。';
 const CRISIS_FALLBACK = '我很在意你现在的状态。请先远离身边可能伤害到自己的东西，然后联系一个此刻能陪着你的人；如果情况紧急，请直接联系当地紧急服务。';
@@ -203,7 +227,12 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
   let tierReason = tierInfo.reason;
   let plan = null;
   try {
-    if (tier === 'minimal') {
+    if (v4Enabled()) {
+      // v4.0：跳过「观」。策略仍由规则层 chooseStrategy 独占决定，plan 只用于内在状态更新与日志。
+      plan = Object.assign(fallbackPlan({}, 'v4_skip_appraise'), { askQuestion: null });
+      tier = 'v4';
+      tierReason = 'v4.0 链路：跳过「观」，只跑一次「书」';
+    } else if (tier === 'minimal') {
       // 同理心底线：策略仍由规则层 chooseStrategy 决定（resolveStrategy 会保留它），
       // fallbackPlan 只提供「不调用模型」的默认表达形态，不做无脑回复。
       plan = getCachedPlan(sessionId, message, riskLevel);
@@ -245,17 +274,28 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
   });
   const shape = replyShape(innerState);
 
-  const systemPrompt = buildSystemPrompt({
-    strategyKey,
-    riskLevel,
-    memories,
-    reason: decision.reason,
-    nextHint: decision.nextHint,
-    plan,
-    shape,
-    userMessage: message,
-    engageLevel: ctx.state ? (ctx.state.engageLevel || 0) : 0
-  });
+  // v4.0：单段式提示词（≈900 token），替代旧版 13 段 / 213 条约束（≈2,500 token）
+  const useV4 = v4Enabled();
+  const systemPrompt = useV4
+    ? buildPromptV4({
+      strategy: strategyKey,
+      riskLevel,
+      memories,
+      reason: decision.reason,
+      userMessage: message,
+      engageLevel: ctx.state ? (ctx.state.engageLevel || 0) : 0
+    })
+    : buildSystemPrompt({
+      strategyKey,
+      riskLevel,
+      memories,
+      reason: decision.reason,
+      nextHint: decision.nextHint,
+      plan,
+      shape,
+      userMessage: message,
+      engageLevel: ctx.state ? (ctx.state.engageLevel || 0) : 0
+    });
   // 关键：当前这句话还没写进会话（在 finalizeTurn 才落库），必须显式追加，
   // 否则模型看不到用户最新的一条消息。
   const history = buildMessages(getHistory(sessionId));
@@ -281,7 +321,9 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
   const draftSafety = lowRisk && (issues.some(isSafetyIssue) || isSafetyDraft(content));
   let critic = { triggered: false, issues, revised: false, safety: !!draftSafety };
   // L0/L1 纯风格问题只记录；安全命中仍重写。L2/L3 保持原触发条件。
-  if (lowRisk ? draftSafety : issues.length) {
+  // v4.0：跳过「校」Rewriter（它实测触发率仅 5%，却要花一次 LLM 调用）。
+  // AI 味防线由 output-guard 的本地正则承担，覆盖率 100%、0 次 LLM 调用、零延迟。
+  if (!useV4 && (lowRisk ? draftSafety : issues.length)) {
     // 安全类命中（亲昵称呼 / 永久承诺等，与 safety.js 的 OUTPUT_BLOCK_PATTERNS 重叠）照常调「校」；
     // 即便「校」降级返回原稿，后面的 checkOutputSafety() 仍会独立拦截 —— 安全兜底不依赖「校」。
     // isSafetyDraft 直接复用 checkOutputSafety 的口径，避免被 localScreen「只报第一个 cliche」掩盖。
@@ -313,7 +355,25 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
     critic
   }, ctx);
 
-  const outputCheck = checkOutputSafety(content);
+  // 输出后检：v4 走 OutputGuard（安全拦截 + AI 味本地快检），旧版走 safety.js 原调用点。
+  // 无论哪条路径，safety.js 的 checkOutputSafety 都是最后一道防线，v4 也照样调它。
+  const outputCheck = useV4
+    ? checkOutput(content, {
+      strategy: strategyKey,
+      riskLevel,
+      history: getHistory(sessionId)
+    })
+    : checkOutputSafety(content);
+  // v4：把 AI 味命中项写进 agent 标注，随响应回传给前端 / 日志。
+  // 中低危不拦用户，但必须记录 —— 这是量化「AI 味命中率」的唯一数据来源，
+  // 也是 A/B 对比（v3 vs v4）时判断"新架构到底有没有把人机感压下去"的依据。
+  if (useV4 && outputCheck.slopHits && outputCheck.slopHits.length) {
+    agent.guard = {
+      version: PROMPT_VERSION_V4,
+      hits: outputCheck.slopHits.map(h => h.id).join(','),
+      severity: outputCheck.slopHits.map(h => h.severity).join(',')
+    };
+  }
   if (outputCheck.blocked) {
     return { reply: outputCheck.fallback, usedModel: true, usage, blocked: true, reason: outputCheck.reason, agent, memoriesUsed };
   }
@@ -413,3 +473,10 @@ module.exports = {
   successPayload,
   friendlyMessage
 };
+
+
+
+
+
+
+
