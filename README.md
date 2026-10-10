@@ -9,7 +9,7 @@
 
 ## 界面预览
 
-> 以下 8 张截图来自 v3.4.0 桌面版。
+> 以下 8 张截图来自 v3.4.0 桌面版（v4.0 界面一致，对话层重造）。。
 
 | 首页 | 对话 |
 | --- | --- |
@@ -35,14 +35,14 @@
 
 ## 下载与开始使用
 
-只提供 **Windows 桌面版**（当前 v3.4.0）。不提供网页版。
+只提供 **Windows 桌面版**（当前 v4.0.0）。。不提供网页版。
 
 | 产物 | 说明 |
 | --- | --- |
-| [`shouanren-3.4.0-x64-setup.exe`](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases/download/v3.4.0/shouanren-3.4.0-x64-setup.exe) | 安装版。当前用户安装，免管理员，带开始菜单与卸载项。 |
-| [`shouanren-3.4.0-win-x64-portable.zip`](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases/download/v3.4.0/shouanren-3.4.0-win-x64-portable.zip) | 免安装绿色版。解压后双击 `守岸人.exe` 即可，**不需要装 Node.js**。 |
+| [`shouanren-4.0.0-x64-setup.exe`](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases/download/v4.0.0/shouanren-4.0.0-x64-setup.exe) | 安装版。当前用户安装，免管理员，带开始菜单与卸载项。 |
+| [`shouanren-4.0.0-win-x64-portable.zip`](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases/download/v4.0.0/shouanren-4.0.0-win-x64-portable.zip) | 免安装绿色版。解压后双击 `守岸人.exe` 即可，**不需要装 Node.js**。 |
 
-> 全部版本见 [Releases 页面](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases)。请使用 v3.4.0 或更高版本。
+> 全部版本见 [Releases 页面](https://gitee.com/flowing-shadows-like-scenes/psychological-agent/releases)。请使用 v4.0.0 或更高版本。
 
 ### 首次使用：全程只需要一个 Key
 
