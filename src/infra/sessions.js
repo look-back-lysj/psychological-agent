@@ -1,7 +1,7 @@
 /**
  * 模块：infra/sessions —— 会话内存 + 本地持久化（防抖落盘）
  * 层级：infra L2（有状态 / 外部 IO）
- * 职责：维护会话轮次、会话状态、风险历史与内在状态；800ms 防抖写 data/sessions.json，退出前可同步 flush。
+ * 职责：维护会话轮次、会话状态、风险历史与内在状态；800ms 防抖写 data/sessions.json（经 infra/atrest 静态加密），退出前可同步 flush。
  * 依赖：core/paths（dataDir）、strategy（createSessionState）、domain/innerstate（createInnerState）
  * 被依赖：server.js、chat/pipeline、chat/retry、chat/index、api/routes
  * 改动风险：🟡 中 —— node --check + node tests/run.js
@@ -27,6 +27,7 @@ const path = require('path');
 const { dataDir } = require('../core/paths');
 const { createSessionState } = require('../strategy');
 const { createInnerState } = require('../domain/innerstate');
+const atrest = require('./atrest');
 
 const MAX_TURNS = 8;                       // 送入模型的历史轮数上限（用户轮）
 const SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6 小时未活动即回收
@@ -85,7 +86,13 @@ function ensureSession(sessionId) {
 function addTurn(sessionId, role, text, meta = {}) {
   const s = ensureSession(sessionId);
   if (!s) return null;
-  const turn = { role, text, ...meta, time: now() };
+  // 🔴 图片与视觉信号**一律不落盘**：base64 会撑大 JSON（且加密后还会膨胀），
+  // 落库只保留 hasImage 这类布尔标记（由调用方写入 meta）。这里是防御性剥离。
+  const cleanMeta = Object.assign({}, meta);
+  delete cleanMeta.image;
+  delete cleanMeta.imageData;
+  delete cleanMeta.imageSignals;
+  const turn = { role, text, ...cleanMeta, time: now() };
   s.turns.push(turn);
   if (s.turns.length > MAX_TRANSCRIPT_TURNS) s.turns = s.turns.slice(-MAX_TRANSCRIPT_TURNS);
   s.updatedAt = now();
@@ -253,7 +260,7 @@ function loadFromDisk() {
     if (!file) return;
     let text;
     try {
-      text = fs.readFileSync(file, 'utf8');
+      text = atrest.readTextFile(file);   // 透明解密（历史明文同样兼容）
     } catch (e) {
       return; // 不存在 / 无权限
     }
@@ -297,7 +304,7 @@ function writeNow() {
   try {
     const file = sessionFilePath();
     if (!file) return false;
-    const payload = `${JSON.stringify(serialize(), null, 2)}\n`;
+    const payload = atrest.encode(`${JSON.stringify(serialize(), null, 2)}\n`);
     try { fs.mkdirSync(path.dirname(file), { recursive: true }); } catch (e) { /* 交给写入失败处理 */ }
     const tmp = `${file}.tmp`;
     fs.writeFileSync(tmp, payload, { encoding: 'utf8', mode: 0o600 });

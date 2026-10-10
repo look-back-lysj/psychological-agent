@@ -33,6 +33,10 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
+
+// 本机接口令牌：与 spawned 后端共用（见 src/server.js 的三层防护）。
+// 评测脚本自带后端，因此必须把同一令牌写进子进程 env 并在请求头带上。
+const SERVER_TOKEN = process.env.XINYU_TOKEN || crypto.randomBytes(24).toString('base64url');
 const DEFAULT_OUT_DIR = path.join(ROOT, '_tmp', 'ab-output');
 const DEFAULT_CASES = path.join(__dirname, 'cases.jsonl');
 const DEFAULT_TIMEOUT_MS = 180000;
@@ -342,6 +346,7 @@ function startBackend({ group, port, baseUrl, model, apiKey, runDir, timeoutMs, 
       PORT: String(port),
       NO_BROWSER: '1',
       XINYU_AGENTS: group === 'A' ? 'on' : 'off',
+      XINYU_TOKEN: SERVER_TOKEN,
       XINYU_DATA_DIR: dataDir,
       LOG_DIR: logDir,
       LLM_BASE_URL: baseUrl,
@@ -475,7 +480,8 @@ function runTurn({ port, sessionId, message, timeoutMs }) {
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(body),
-        Accept: 'text/event-stream'
+        Accept: 'text/event-stream',
+        'X-XinYu-Token': SERVER_TOKEN,
       }
     }, (res) => {
       res.setEncoding('utf8');

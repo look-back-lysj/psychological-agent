@@ -1,7 +1,8 @@
 /**
  * 模块：core/paths —— 路径解析（data / logs 目录）
  * 层级：core L0
- * 职责：解析可写数据目录与日志目录：exe 旁边优先、不可写回退用户目录；支持 XINYU_DATA_DIR / LOG_DIR 覆盖。
+ * 职责：解析可写数据目录与日志目录：exe 旁边优先、不可写回退用户目录；支持 XINYU_DATA_DIR / LOG_DIR 覆盖；
+ *      目录创建后收紧访问权限（Windows icacls 去继承 / POSIX 0700），避免同机其它用户读到私密数据与 Key。
  * 依赖：无（只用 Node 内置 fs / os / path）
  * 被依赖：core/logger（logDir）、infra/config、infra/memory、infra/sessions、infra/comeback（dataDir / logDir）
  * 改动风险：🟢 低 —— node --check + 起一次短命服务确认能启动
@@ -50,21 +51,56 @@ function dataDir() {
     return forced;
   }
   const primary = path.join(appRoot(), 'data');
-  if (canWrite(primary)) return primary;
+  if (canWrite(primary)) {
+    hardenPath(primary, true);
+    return primary;
+  }
   const base = process.env.APPDATA || path.join(os.homedir(), '.config');
   const fallback = path.join(base, 'xinyu', 'data');
   try { fs.mkdirSync(fallback, { recursive: true }); } catch (e) { /* 忽略 */ }
+  hardenPath(fallback, true);
   return fallback;
 }
 
 /** 日志目录：同样优先项目/exe 旁边，失败回退用户目录。 */
 function logDir() {
   const primary = path.join(appRoot(), 'logs');
-  if (canWrite(primary)) return primary;
+  if (canWrite(primary)) {
+    hardenPath(primary, true);
+    return primary;
+  }
   const base = process.env.APPDATA || path.join(os.homedir(), '.config');
   const fallback = path.join(base, 'xinyu', 'logs');
   try { fs.mkdirSync(fallback, { recursive: true }); } catch (e) { /* 忽略 */ }
+  hardenPath(fallback, true);
   return fallback;
 }
 
-module.exports = { isPkg, appRoot, dataDir, logDir, canWrite };
+/**
+ * 收紧访问权限，让私密数据（会话转写 / 长期记忆 / API Key）只对当前用户可读。
+ *   Windows：icacls 去掉继承，只保留当前用户的完全控制
+ *   POSIX  ：目录 0700、文件 0600
+ * 目标不存在、或命令不可用时**静默返回 false** —— 权限收紧失败绝不能阻断应用启动。
+ * 注意：这不是加密，只防「同机其它用户 / 误拷贝到公共目录」，挡不住管理员权限。
+ */
+function hardenPath(target, isDir) {
+  try {
+    if (!target || !fs.existsSync(target)) return false;
+    if (process.platform === 'win32') {
+      const user = process.env.USERNAME || (os.userInfo ? os.userInfo().username : '');
+      if (!user) return false;
+      const grant = isDir ? user + ':(OI)(CI)F' : user + ':F';
+      const r = require('child_process').spawnSync(
+        'icacls', [target, '/inheritance:r', '/grant:r', grant], { windowsHide: true }
+      );
+      if (r && r.error) return false;
+      return !!(r && r.status === 0);
+    }
+    fs.chmodSync(target, isDir ? 0o700 : 0o600);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+module.exports = { isPkg, appRoot, dataDir, logDir, canWrite, hardenPath };

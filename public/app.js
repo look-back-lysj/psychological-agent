@@ -57,7 +57,7 @@
  *  五、安全 Markdown 渲染          786      3      renderMarkdown renderInline isBlockStart
  *  六、本地多会话（localStorage）   918     12      loadState saveState getSession createSession
  *  七、渲染：消息/会话/标题/空状态  1105     21      buildMessageEl renderMessages renderSessionList
- *  八、滚动 / 输入框 / Toast       1525     11      scrollToBottom autosize toast
+ *  八、滚动 / 输入框 / Toast       1525     15      scrollToBottom autosize attachFile compressImage
  *  九、SSE 解析                   1660      3      drainBlocks splitEvents parseEventLines
  *  十、流式渲染调度                1723      2      scheduleAssistantRender flushAssistantRender
  *  十一、网络：流式+降级+健康检查    1743      6      applyStreamEvent streamChat fetchNonStream
@@ -74,7 +74,7 @@
  *  二十、桌面外壳（Tauri）          3589      5      initDesktopShell bindTitlebar syncMaximizeIcon
  *  二十一、初始化                 3686      1      init
  * ---------------------------------------------------------------
- *  合计：25 个分区标记 / 192 个顶层 function。
+ *  合计：25 个分区标记 / 197 个顶层 function（2026-09-14 图片功能后更新；行号以 checker 输出为准）。
  *  机检：`node scripts/check-frontend-sections.js`（发现未归属函数则退出码 1）。
  *
  * 「我想改 X」速查：
@@ -114,6 +114,16 @@
 
   const DEFAULT_TITLE = '新的对话';
   const TITLE_MAX = 16;
+
+  // 本机接口访问令牌：由后端在返回 index.html 时注入到页面上（见 src/server.js）。
+  // 作用：让「浏览器里的第三方页面」「本机其它进程」无法直接调用 /api/* 私密接口。
+  // 缺失时退化为不带该头（老页面 / 直接打开静态文件），后端会拒绝并给出中文提示。
+  const API_TOKEN = (typeof window !== 'undefined' && window.__XINYU_TOKEN) || '';
+  function authHeaders(extra) {
+    const h = extra || {};
+    if (API_TOKEN) h['X-XinYu-Token'] = API_TOKEN;
+    return h;
+  }
 
   // 策略 / 风险英文 key -> 中文标签（未知则原样显示）
   const STRATEGY_LABELS = {
@@ -271,6 +281,7 @@
     chatTitle: $('chat-title'),
     statusPill: $('status-pill'),
     chat: $('chat'),
+    chatTyping: $('chat-typing'),
     messages: $('messages'),
     messagesEnd: $('messages-end'),
     srLive: $('sr-live'),
@@ -285,6 +296,11 @@
     form: $('chat-form'),
     input: $('message'),
     sendBtn: $('send-btn'),
+    attachImage: $('attach-image'),
+    attachInput: $('attach-input'),
+    attachPreview: $('attach-preview'),
+    attachThumb: $('attach-thumb'),
+    attachRemove: $('attach-remove'),
     toasts: $('toasts'),
     scrim: $('scrim'),
 
@@ -381,6 +397,7 @@
   let activeController = null; // 当前流式请求的 AbortController
   let pending = null;          // 正在流式更新的助手消息 { session, msg, index, el }
   let rafId = 0;               // 流式渲染的 requestAnimationFrame 句柄
+  const lastScrollPositions = new WeakMap();
   let stickBottom = true;      // 是否自动吸附到底部
   let messagesEndObserver = null; // 底部锚点观察器：用户上滚即暂停跟随
   let composing = false;       // 输入法组合中
@@ -816,7 +833,7 @@
   // 统一的后端请求：始终 try/catch，失败抛中文错误；非 2xx 或 ok!==true 一律视为失败
   async function apiRequest(path, options) {
     const opts = options || {};
-    const init = { method: opts.method || 'GET', headers: {}, cache: 'no-store' };
+    const init = { method: opts.method || 'GET', headers: authHeaders(), cache: 'no-store' };
     if (opts.body !== undefined) {
       init.headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(opts.body);
@@ -1015,6 +1032,8 @@
       content: typeof raw.content === 'string' ? raw.content : String(raw.content == null ? '' : raw.content),
       ts: Number(raw.ts) || now(),
     };
+    // 图片只恢复「标记」，绝不从 localStorage 复原图片本体（图片从不落盘）
+    if (raw.hasImage === true) msg.hasImage = true;
     if (role === 'assistant') {
       if (raw.strategy) msg.strategy = String(raw.strategy);
       if (raw.strategyLabel) msg.strategyLabel = String(raw.strategyLabel);
@@ -1138,6 +1157,7 @@
           .map((m) => {
             const o = { role: m.role, content: m.content, ts: m.ts };
             if (m.strategy) o.strategy = m.strategy;
+            if (m.hasImage) o.hasImage = true;   // 只留标记（图片本身不落 localStorage）
             if (m.strategyLabel) o.strategyLabel = m.strategyLabel;
             if (m.riskLevel) o.riskLevel = m.riskLevel;
             if (m.blocked) o.blocked = true;
@@ -1237,6 +1257,14 @@
     const article = makeEl('article', 'msg msg--user');
     const body = makeEl('div', 'msg__body');
     const bubble = makeEl('div', 'msg__bubble');
+    if (msg.image) {
+      const im = makeEl('img', 'msg__image');
+      im.src = msg.image;
+      im.alt = '发送的图片';
+      bubble.appendChild(im);
+    } else if (msg.hasImage) {
+      bubble.appendChild(makeEl('div', 'msg__image-chip', '🖼️ 含图片（未保存）'));
+    }
     const content = makeEl('div', 'msg__content', msg.content || '');
     bubble.appendChild(content);
     body.appendChild(bubble);
@@ -1479,6 +1507,7 @@
     article.classList.toggle('msg--error', !!msg.error);
     article.classList.toggle('msg--blocked', !!msg.blocked);
     article.classList.toggle('msg--typing', !msg.content && !!msg.streaming);
+    article.style.display = !msg.content && msg.streaming ? 'none' : '';
 
     const sig = msg.streaming
       ? 's|' + (msg.content || '') + '|' + (msg.waitingText || '')
@@ -1598,6 +1627,12 @@
     if (el.chatTitle) el.chatTitle.textContent = (session && session.title) || DEFAULT_TITLE;
   }
 
+  function setTypingStatus(visible) {
+    if (!el.chatTyping) return;
+    el.chatTyping.hidden = !visible;
+    el.chatTyping.setAttribute('aria-hidden', visible ? 'false' : 'true');
+  }
+
   function updateWelcome(session) {
     setHidden(el.welcome, !!(session && session.messages.length));
   }
@@ -1631,6 +1666,7 @@
       node.style.scrollBehavior = 'auto';
       node.scrollTop = node.scrollHeight;
       node.style.scrollBehavior = prev;
+      lastScrollPositions.set(node, node.scrollTop);
     });
   }
 
@@ -1692,14 +1728,24 @@
         if (!stickBottom) { stickBottom = true; updateScrollButton(); }
         return;
       }
-      if (stickBottom) { stickBottom = false; updateScrollButton(); }
+      // 布局增长也会让锚点离开视野，不能据此认定用户向上翻阅。
+      if (stickBottom) scrollToBottom(false);
     }, { root: el.chat, threshold: 0, rootMargin: '0px' });
     try { messagesEndObserver.observe(anchor); } catch (e) { /* 忽略：阈值法兜底 */ }
   }
 
-  function handleScroll() {
-    // 有 IntersectionObserver 时以底部锚点为准；没有时退回 56px 阈值法。
-    if (!messagesEndObserver) stickBottom = isNearBottom();
+  function handleScroll(event) {
+    const node = event && event.currentTarget;
+    if (node) {
+      const previous = lastScrollPositions.get(node);
+      const current = node.scrollTop;
+      lastScrollPositions.set(node, current);
+      if (previous !== undefined && current < previous - 2 && !isNearBottom()) {
+        stickBottom = false;
+      } else if (isNearBottom()) {
+        stickBottom = true;
+      }
+    }
     updateScrollButton();
   }
 
@@ -1743,6 +1789,70 @@
   function setMessagesBusy(busy) {
     if (!el.messages) return;
     el.messages.setAttribute('aria-busy', busy ? 'true' : 'false');
+  }
+
+  // ── 图片附件（仅本轮发送；不落 localStorage、不落服务端）────────────
+  const IMAGE_MAX_CHARS = 900000;   // 与服务端 src/chat/image.js 的上限保持一致
+  const IMAGE_MAX_EDGE = 1024;      // 等比缩放到最长边不超过该像素
+  let pendingImage = null;
+
+  function clearPendingImage() {
+    pendingImage = null;
+    if (el.attachThumb) el.attachThumb.removeAttribute('src');
+    if (el.attachPreview) el.attachPreview.hidden = true;
+  }
+
+  function showPendingImage(dataUrl) {
+    pendingImage = dataUrl;
+    if (el.attachThumb) el.attachThumb.src = dataUrl;
+    if (el.attachPreview) el.attachPreview.hidden = false;
+  }
+
+  /** 等比缩放 + 逐级降质量，压到上限内；失败返回 null */
+  function compressImage(file) {
+    return new Promise(function (resolve) {
+      const reader = new FileReader();
+      reader.onerror = function () { resolve(null); };
+      reader.onload = function () {
+        const img = new Image();
+        img.onerror = function () { resolve(null); };
+        img.onload = function () {
+          try {
+            const scale = Math.min(1, IMAGE_MAX_EDGE / Math.max(img.width, img.height));
+            const w = Math.max(1, Math.round(img.width * scale));
+            const h = Math.max(1, Math.round(img.height * scale));
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, w, h);
+            ctx.drawImage(img, 0, 0, w, h);
+            let q = 0.85;
+            let out = canvas.toDataURL('image/jpeg', q);
+            while (out.length > IMAGE_MAX_CHARS && q > 0.4) {
+              q -= 0.15;
+              out = canvas.toDataURL('image/jpeg', q);
+            }
+            resolve(out.length <= IMAGE_MAX_CHARS ? out : null);
+          } catch (e) { resolve(null); }
+        };
+        img.src = String(reader.result || '');
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function attachFile(file) {
+    if (!file) return;
+    if (['image/png', 'image/jpeg', 'image/webp'].indexOf(file.type) < 0) {
+      toast('只支持 png / jpeg / webp 图片', 'error');
+      return;
+    }
+    const dataUrl = await compressImage(file);
+    if (!dataUrl) { toast('这张图片太大了，压缩后仍超出上限（约 660 KB）', 'error'); return; }
+    showPendingImage(dataUrl);
+    toast('已附加图片，可继续输入文字后发送');
   }
 
   /* ============================================================
@@ -1909,10 +2019,11 @@
   async function streamChat(text, sessionId, assistant, signal, isRetry) {
     const res = await fetch('/api/chat/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
-      body: JSON.stringify({ message: text, sessionId: sessionId, retry: isRetry === true }),
+      headers: authHeaders({ 'Content-Type': 'application/json', 'Accept': 'text/event-stream' }),
+      body: JSON.stringify({ message: text, sessionId: sessionId, retry: isRetry === true, image: pendingImage || undefined }),
       signal: signal,
     });
+    clearPendingImage();   // 图片已随本次请求发出，预览即时收起
     if (!res.ok) throw new Error('stream_http_' + res.status);
     if (!res.body || typeof res.body.getReader !== 'function') throw new Error('stream_no_body');
 
@@ -1954,10 +2065,11 @@
   async function fetchNonStream(text, sessionId, signal, isRetry) {
     const res = await fetch('/api/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, sessionId: sessionId, retry: isRetry === true }),
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ message: text, sessionId: sessionId, retry: isRetry === true, image: pendingImage || undefined }),
       signal: signal,
     });
+    clearPendingImage();
     if (!res.ok) throw new Error('http_' + res.status);
     const json = await res.json();
     if (!json || json.ok !== true || !json.data) throw new Error('bad_payload');
@@ -2071,31 +2183,22 @@
 
   async function startGeneration(text, session, assistant, isRetry) {
     generating = true;
+    setTypingStatus(true);
+    updateTitle(session);
     setMessagesBusy(true);
     syncComposer();
 
     const controller = new AbortController();
     activeController = controller;
     let aborted = false;
-    let waitTimer = 0;
+
 
     try {
       // 不在请求前人为等待：占位/打字信号覆盖真实网络与模型延迟。
-      // 若 900ms 内没有第一个 delta，再把占位换成「我在听」。
+      // 等待状态显示在顶部标题，收到正文后恢复会话标题。
       assistant.gotDelta = false;
       assistant.waitingText = '';
       if (controller.signal.aborted) { aborted = true; return; }
-
-      // 首字兜底：900ms 内没有第一个 delta，就把占位文案换成更自然的一句
-      waitTimer = window.setTimeout(function () {
-        if (assistant.done || assistant.gotDelta || !assistant.streaming) return;
-        assistant.waitingText = WAIT_TEXT;
-        // 直接渲染一次：后台标签页里 rAF 可能被节流，兜底文案不能等下一帧
-        try {
-          flushAssistantRender();
-          if (stickBottom) scrollToBottom(false);
-        } catch (e) { /* 渲染异常不影响请求 */ }
-      }, FIRST_TOKEN_MS);
 
       const finished = await streamChat(text, session.id, assistant, controller.signal, isRetry);
       if (!finished && !controller.signal.aborted) {
@@ -2120,7 +2223,7 @@
         }
       }
     } finally {
-      if (waitTimer) window.clearTimeout(waitTimer);
+
       // 中止可能表现为“抛 AbortError”“流提前结束”两种，统一以 signal 判定
       const stopped = aborted || controller.signal.aborted;
       if (stopped) {
@@ -2132,7 +2235,7 @@
       setMessagesBusy(false);
       generating = false;
       if (activeController === controller) activeController = null;
-      try { syncComposer(); autosize(); } catch (e) { /* 忽略 */ }
+      try { setTypingStatus(false); updateTitle(getSession(activeId)); syncComposer(); autosize(); } catch (e) { /* 忽略 */ }
     }
   }
 
@@ -2146,7 +2249,11 @@
     const session = ensureActive();
 
     // 用户消息
-    session.messages.push({ role: 'user', content: text, ts: now() });
+    session.messages.push({
+      role: 'user', content: text, ts: now(),
+      image: pendingImage || undefined,   // 仅内存：saveState 不落 localStorage
+      hasImage: !!pendingImage
+    });
     if (!session.title || session.title === DEFAULT_TITLE) {
       session.title = truncateTitle(text);
     }
@@ -2176,7 +2283,7 @@
     updateWelcome(session);
     stickBottom = true;
     updateScrollButton();
-    scrollToBottom(true);
+    scrollToBottom(false);
     saveState();
 
     const index = session.messages.length - 1;
@@ -2447,7 +2554,7 @@
   async function refreshHealth(silent) {
     if (!silent) setHealth('loading', '正在确认连接', '模型还在确认');
     try {
-      const res = await fetch('/api/health', { cache: 'no-store' });
+      const res = await fetch('/api/health', { cache: 'no-store', headers: authHeaders() });
       if (!res.ok) throw makeApiError('http_' + res.status, res.status);
       const data = await res.json();
       if (!data || data.ok !== true) throw makeApiError('bad_payload', 0);
@@ -2487,7 +2594,7 @@
   // 带超时的 JSON 请求：网络失败 / 超时 / 非 2xx / ok !== true 一律返回 null
   async function fetchDataWithTimeout(path, options, timeoutMs) {
     const opts = options || {};
-    const init = { method: opts.method || 'GET', headers: {}, cache: 'no-store' };
+    const init = { method: opts.method || 'GET', headers: authHeaders(), cache: 'no-store' };
     if (opts.body !== undefined) {
       init.headers['Content-Type'] = 'application/json';
       init.body = JSON.stringify(opts.body);
@@ -2713,6 +2820,35 @@
     }
 
     // 输入区
+    // 图片附件：按钮 / 文件选择 / 粘贴 / 拖入（选完立刻清空 input，允许连续选同一张）
+    if (el.attachImage && el.attachInput) {
+      el.attachImage.addEventListener('click', function () { el.attachInput.click(); });
+      el.attachInput.addEventListener('change', function () {
+        const f = el.attachInput.files && el.attachInput.files[0];
+        el.attachInput.value = '';
+        if (f) attachFile(f);
+      });
+    }
+    if (el.attachRemove) el.attachRemove.addEventListener('click', clearPendingImage);
+    if (el.input) {
+      el.input.addEventListener('paste', function (e) {
+        const items = (e.clipboardData && e.clipboardData.items) || [];
+        for (let i = 0; i < items.length; i += 1) {
+          if (items[i].type && items[i].type.indexOf('image/') === 0) {
+            const f = items[i].getAsFile();
+            if (f) { e.preventDefault(); attachFile(f); }
+            return;
+          }
+        }
+      });
+    }
+    if (el.form) {
+      el.form.addEventListener('dragover', function (e) { e.preventDefault(); });
+      el.form.addEventListener('drop', function (e) {
+        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) { e.preventDefault(); attachFile(f); }
+      });
+    }
     if (el.form) el.form.addEventListener('submit', function (e) { e.preventDefault(); submitMessage(); });
     // 发送键：按压缩放 + 涟漪（pointerdown 比 click 更跟手；禁用态不会触发）
     if (el.sendBtn) {

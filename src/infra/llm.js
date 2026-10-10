@@ -38,19 +38,40 @@ function isDeepSeek(baseUrl) {
   return typeof baseUrl === 'string' && baseUrl.toLowerCase().includes('deepseek');
 }
 
+// 含图轮次的 max_tokens 下限：视觉任务的思考 token 实测占 151~463，
+// 预算不足会导致 content 为空（实测踩过）→ 含图时至少给到这里。可用 XINYU_IMAGE_MAX_TOKENS 覆盖。
+const IMAGE_MAX_TOKENS_FLOOR = Number(process.env.XINYU_IMAGE_MAX_TOKENS || 1024);
+
+/**
+ * 单条消息 -> content。
+ * 兼容原则：**可选**字段 image（data URL）存在时才改用多模态 content 数组；
+ * 纯文本消息仍返回字符串，buildPayload 的既有行为与改动前逐字节一致。
+ */
+function toMessageContent(m) {
+  const text = String(m && m.text == null ? '' : (m && m.text));
+  const image = m && typeof m.image === 'string' ? m.image : '';
+  if (!image) return text;
+  const parts = [];
+  if (text) parts.push({ type: 'text', text: text });
+  parts.push({ type: 'image_url', image_url: { url: image } });
+  return parts;
+}
+
 // 组装 payload：只带通用字段，不传 frequency_penalty / presence_penalty / n / seed（DeepSeek 已废弃或不支持）
 function buildPayload(cfg, systemPrompt, messages, stream) {
+  const list = (messages || []).map(m => ({
+    role: m.role === 'assistant' ? 'assistant' : 'user',
+    content: toMessageContent(m)
+  }));
+  const hasImage = list.some(m => Array.isArray(m.content));
   const payload = {
     model: cfg.model,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      ...(messages || []).map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.text }))
-    ]
+    messages: [{ role: 'system', content: systemPrompt }].concat(list)
   };
   if (stream) payload.stream = true;
   // 思考模式下 temperature 不生效，干脆不传
   if (cfg.thinking !== 'enabled') payload.temperature = cfg.temperature;
-  payload.max_tokens = cfg.maxTokens;
+  payload.max_tokens = hasImage ? Math.max(cfg.maxTokens, IMAGE_MAX_TOKENS_FLOOR) : cfg.maxTokens;
   if (cfg.thinking === 'disabled' && isDeepSeek(cfg.baseUrl)) payload.thinking = { type: 'disabled' };
   return payload;
 }

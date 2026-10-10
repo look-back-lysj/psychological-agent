@@ -968,6 +968,45 @@ svg.icon {
    两张截图相差约 3.3 万像素）。按「有问题就去掉」处理，这里只保留 .chat 的
    contain: content。若后续要用，必须先给 .msg 留出阴影空间，否则会掉阴影。 */
 
+.chat__typing {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  width: min(100%, var(--content-w));
+  min-height: 42px;
+  margin: 0 auto;
+  padding: 8px var(--sp-2);
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.chat__typing[hidden] {
+  display: none;
+}
+
+.chat__typing-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 0 0 4px var(--glow-brand);
+  animation: chat-typing-pulse 1.2s var(--ease) infinite;
+}
+
+@keyframes chat-typing-pulse {
+  0%, 100% { opacity: .35; transform: scale(.85); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat__typing-dot { animation: none; opacity: .7; }
+}
+
 .messages {
   width: 100%;
   max-width: var(--content-w);
@@ -1526,6 +1565,29 @@ svg.icon {
   font-size: var(--fs-xs);
   text-align: center;
 }
+
+/* 图片附件（仅本轮发送，不保存） */
+.composer__attach {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 0 8px; padding: 8px 10px;
+  border: 1px solid var(--line, #e5e7eb); border-radius: 12px;
+  background: var(--surface-2, #f8fafc); width: fit-content; max-width: 100%;
+}
+.composer__attach img { max-height: 84px; max-width: 180px; border-radius: 8px; display: block; }
+.composer__attach-remove {
+  border: none; background: transparent; cursor: pointer;
+  color: var(--muted, #6b7280); font-size: 14px; line-height: 1; padding: 4px;
+}
+.composer__attach-remove:hover { color: var(--danger, #dc2626); }
+.composer__icon {
+  flex: 0 0 auto; width: 38px; height: 38px; border-radius: 10px;
+  border: 1px solid var(--line, #e5e7eb); background: transparent;
+  color: var(--muted, #6b7280); cursor: pointer; display: inline-flex;
+  align-items: center; justify-content: center; padding: 0;
+}
+.composer__icon:hover { color: var(--brand, #5b8def); border-color: var(--brand, #5b8def); }
+.msg__image { display: block; max-width: 240px; max-height: 240px; border-radius: 10px; margin-bottom: 6px; }
+.msg__image-chip { font-size: 12px; opacity: .75; margin-bottom: 4px; }
 
 kbd {
   display: inline-block;

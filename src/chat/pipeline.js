@@ -24,6 +24,7 @@ const {
   pushPendingTurn
 } = require('../infra/sessions');
 const { checkInputSafety, checkOutputSafety } = require('../safety');
+const { parseImage } = require('./image');
 const { chooseStrategy, updateSessionState, buildRoute, updateEngageLadder } = require('../strategy');
 const { buildSystemPrompt, PROMPT_VERSION } = require('../pipeline/prompts');
 const { PERSONA_VERSION } = require('../domain/persona');
@@ -98,7 +99,17 @@ function prepareTurn(body) {
 
   const message = fullMessage.slice(0, 2000);
   const riskHistory = getRiskHistory(sessionId);
-  const inputSafety = checkInputSafety(fullMessage, { riskHistory });
+  // 图片 ↔ 危机分级的接入点（2026-09-14 建立）：图片功能尚未落地，此处恒为 false，
+  // 一旦接口层透传 body.image / body.imageSignals，分级自动生效（铁律见 safety.js：只升不降）。
+  // 图片：白名单 + 大小校验（不通过就回中文错误，不进模型）
+  const img = parseImage(body);
+  if (!img.ok) return { error: img.error };
+  const inputSafety = checkInputSafety(fullMessage, {
+    riskHistory,
+    hasImage: !!img.image,
+    // 视觉安全信号由 HTTP 层预计算（packages/pipeline/vision）后回填；缺失即按「含图 → L1」处理
+    imageSignals: (body && body.imageSignals) || null
+  });
   const state = getState(sessionId);
   // 先根据这句话推进/退回「开口引导阶梯」，再选策略：
   // 阶梯进行中会固定走 S1_listen，把邀请一轮一轮递下去，而不是撤回邀请。
@@ -107,7 +118,10 @@ function prepareTurn(body) {
   const route = buildRoute(inputSafety.riskLevel, decision, state);
   const explicit = handleExplicitMemory(fullMessage);
 
-  return { message, fullMessage, sessionId, inputSafety, decision, route, state, explicit, retry, retryDedup };
+  return {
+    message, fullMessage, sessionId, inputSafety, decision, route, state, explicit, retry, retryDedup,
+    image: img.image, imageMeta: { mime: img.mime, bytes: img.bytes }
+  };
 }
 
 function buildMessages(history) {
@@ -245,7 +259,9 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
   // 关键：当前这句话还没写进会话（在 finalizeTurn 才落库），必须显式追加，
   // 否则模型看不到用户最新的一条消息。
   const history = buildMessages(getHistory(sessionId));
-  history.push({ role: 'user', text: message });
+  history.push(ctx.image
+    ? { role: 'user', text: message, image: ctx.image }   // 图片只进本轮请求，不写会话
+    : { role: 'user', text: message });
 
   let content = '';
   let usage = null;
@@ -259,16 +275,17 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
     usage = r.usage;
   }
 
-  // 「校」的调用条件（v3.2 起收敛为唯一一个）：本地规则 localScreen() 命中。
-  // 未命中（issues 为空）→ 这里**不会**调用 review()，本轮只跑「观」+「书」（minimal 档只跑「书」）。
-  // 命中时 review() 的职责是「直接重写」，不是输出评审意见。
-  const issues = localScreen(content, plan, shape);
-  let critic = { triggered: false, issues, revised: false, safety: false };
-  if (issues.length) {
+  // 低风险仅安全问题触发重写；高风险保持原本的本地快检条件。
+  const issues = localScreen(content, plan, shape, { riskLevel });
+  const lowRisk = riskLevel === 'L0' || riskLevel === 'L1';
+  const draftSafety = lowRisk && (issues.some(isSafetyIssue) || isSafetyDraft(content));
+  let critic = { triggered: false, issues, revised: false, safety: !!draftSafety };
+  // L0/L1 纯风格问题只记录；安全命中仍重写。L2/L3 保持原触发条件。
+  if (lowRisk ? draftSafety : issues.length) {
     // 安全类命中（亲昵称呼 / 永久承诺等，与 safety.js 的 OUTPUT_BLOCK_PATTERNS 重叠）照常调「校」；
     // 即便「校」降级返回原稿，后面的 checkOutputSafety() 仍会独立拦截 —— 安全兜底不依赖「校」。
     // isSafetyDraft 直接复用 checkOutputSafety 的口径，避免被 localScreen「只报第一个 cliche」掩盖。
-    const safety = issues.some(isSafetyIssue) || isSafetyDraft(content);
+    const safety = draftSafety || issues.some(isSafetyIssue) || isSafetyDraft(content);
     const rv = await review({ userText: message, strategyKey, riskLevel }, content);
     critic = {
       triggered: true,
@@ -280,7 +297,7 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
     if (rv.revised) { content = rv.revised; critic.revised = true; }
     // 触发「校」后档位升级为 reviewed（共 3 次调用）
     tier = 'reviewed';
-    tierReason = tierReason + '；本地快检命中（' + issues.slice(0, 2).join('、') + '），追加「校」重写';
+    tierReason = tierReason + '；' + (safety ? '输出安全检查命中' : '本地快检命中（' + issues.slice(0, 2).join('、') + '）') + '，追加「校」重写';
   }
 
   const agent = attachRetryMeta({
@@ -314,12 +331,13 @@ function finalizeTurn(ctx, result, t0) {
   // 未命中（retryDedup.ok === false）时按普通请求处理，照常追加。
   const reusedUserTurn = !!(ctx.retry && ctx.retryDedup && ctx.retryDedup.ok);
   if (!reusedUserTurn) {
-    addTurn(sessionId, 'user', message, { riskLevel: inputSafety.riskLevel, strategy: decision.key });
+    addTurn(sessionId, 'user', message, { riskLevel: inputSafety.riskLevel, strategy: decision.key, hasImage: !!ctx.image });
   }
   addTurn(sessionId, 'assistant', result.reply, {
     riskLevel: inputSafety.riskLevel,
     strategy: decision.key,
-    blocked: result.blocked
+    blocked: result.blocked,
+    hasImage: !!ctx.image
   });
   pushPendingTurn(sessionId, message, result.reply);
   logCall({

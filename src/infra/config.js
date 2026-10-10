@@ -12,7 +12,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { dataDir } = require('../core/paths');
+const { dataDir, hardenPath } = require('../core/paths');
 
 // 配置文件固定为 data/config.json（data/ 已在 .gitignore，绝不入库）
 // 打包成 exe 后快照目录只读，与 main.js / logger.js 保持一致，写到 exe 旁边
@@ -213,6 +213,8 @@ function writeStoredConfig(data) {
     // 先写临时文件再改名，避免写到一半崩溃导致配置文件损坏；mode 600 限制本机其它用户读取
     fs.writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
     fs.renameSync(tmp, CONFIG_FILE);
+    // Windows 上 mode 0o600 基本无效（ACL 由继承决定），补一道显式 ACL：去继承、只留当前用户
+    hardenPath(CONFIG_FILE, false);
   } catch (e) {
     // 只带错误码，不带任何配置内容，避免 Key 进日志
     const err = new Error(`config_write_failed: 配置保存失败（${e && e.code ? e.code : 'IOError'}）。`);

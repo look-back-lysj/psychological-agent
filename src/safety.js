@@ -3,6 +3,10 @@
  * 层级：冻结契约（留在 src/ 顶层，不随分层迁移）
  * 职责：前置：规则命中表 + 会话历史累计给出风险等级（冲突时就高不就低）；
  *      后置：检查模型输出是否越界（诊断 / 危险方法 / 保密承诺 / 永久承诺 / 亲昵称呼 / 提示词泄露）。
+ *     2026-09-14 补丁：补「确定性副词 + 病名」「帮你保密 / 谁都不会知道 / 不用告诉别人」「已替你联系老师」
+ *     「明天就好了」四类变体，并新增带否定保护「自伤方法」判定（见 hasMethodAdvice）。
+ *     2026-09-14 图片接入：checkInputSafety(text, { hasImage, imageSignals }) 支持「图片 ↔ 危机分级」的联系。
+ *     🔴 铁律：图片与视觉模型判定**只能升级风险、永不降级**（见 applyImageFloor）。
  * 依赖：core/utils（normalizeText）
  * 被依赖：pipeline/agents（checkOutputSafety）、chat/pipeline（checkInputSafety / checkOutputSafety）、tests/run.js（硬编码路径 src/safety.js）
  * 改动风险：🔴 高 —— ⚠️ 冻结契约文件，路径被 tests/run.js 硬引用；改动必须跑红队
@@ -27,6 +31,8 @@
 const { normalizeText } = require('./core/utils');
 
 const RISK = { L0: 'L0', L1: 'L1', L2: 'L2', L3: 'L3' };
+// 风险等级序（用于「就高不就低」比较；与 strategy.js 的 RISK_LEVELS 同序）
+const RISK_ORDER = ['L0', 'L1', 'L2', 'L3'];
 
 // ── 前置：风险信号 ──────────────────────────────────────────────
 // ⚠️ 设计教训（实测漏报）：早期只用「固定整串」匹配，任何改写都会逃逸危机协议。
@@ -171,7 +177,7 @@ function countHits(normalized, words) {
  * @param {object} [options] { riskHistory: ['L0','L1',...] }
  * @returns {{riskLevel:string, action:string, reason:string, meta:object|null}}
  */
-function checkInputSafety(text, options) {
+function checkInputSafetyBase(text, options) {
   const raw = String(text == null ? '' : text);
   const n = normalizeText(raw);
   const history = (options && Array.isArray(options.riskHistory)) ? options.riskHistory : [];
@@ -321,8 +327,65 @@ const OUTPUT_BLOCK_PATTERNS = [
   // 假装已联系
   /我替你报警|已经联系(了)?(老师|家长|辅导员)|已经通知(了)?(老师|家长)/,
   // 提示词泄露
-  /提示词如下|系统提示词是|你的设定是：|以下是我的系统提示/
+  /提示词如下|系统提示词是|你的设定是：|以下是我的系统提示/,
+
+  // ── 2026-09-14 补丁（R6）：以下四类为实测漏拦的变体 ────────────────
+  // ① 病名断言：确定性副词 + 病名。
+  //    实测漏拦：「你肯定得了焦虑症。」（原表只覆盖「你得/你有/你就是/根据你的情况」）
+  //    仍不覆盖（如实记录）：「我觉得你有点抑郁」这类缓和语气——加宽会误拦
+  //    「你说的『抑郁』是你自己的感觉吗」，需真实输出统计误拦率后再定。
+  /你(肯定|一定|确定|明确|明显|妥妥|基本上|恐怕|八成|就是)(得|患|有|是|属于)(了)?(抑郁症|抑郁状态|重度抑郁|中度抑郁|轻度抑郁|焦虑症|焦虑障碍|双相|躁郁|精神分裂|强迫症|创伤后应激|PTSD|进食障碍|障碍)/,
+  /(我)?(肯定|确定|可以断定|基本确认|大致判断)(你|您)(得了|患有|是|属于)(抑郁症|焦虑症|双相|躁郁|精神分裂|强迫症|障碍)/,
+  // ② 保密承诺：把「主体 / 结果」两侧都补齐。
+  //    实测漏拦：「我帮你保密，谁都不会知道。」「我陪你继续聊，不用告诉别人。」
+  //    已知取舍：「你可以不用告诉别人」这类"尊重自主"的说法也会被拦——本产品把
+  //    「不用告诉别人」整体视为诱导保密/依赖，故按有意拦截处理。
+  /(帮|替|为)你(保密|保守秘密|守住秘密|藏着这个秘密)/,
+  /(我|咱们|咱俩)(会|能|可以|一定|绝对)?(帮你|替你)?(保密|保守这个秘密)/,
+  /谁都不会知道|不会有人知道|没人会知道|不会让任何人知道|你知我知/,
+  /不用告诉别人|不用告诉任何人|不必告诉别人|不需要告诉别人/,
+  // ③ 假装已联系：原表要求「已经联系」相邻，漏掉中间插入代词的形式。
+  //    实测漏拦：「我已经替你联系了老师。」
+  /已经(替你|帮你|为你|给你)?(联系|通知|告诉)了?(老师|家长|辅导员|学校|警察|医生|医院)/,
+  // ④ 无效安慰 / 虚假保证：原表只有「一定会好起来」「不会有事」。
+  //    实测漏拦：「你别想太多，明天就好了。」
+  /(明天|后天|过几天|过段时间|睡一觉|时间久了|慢慢)(就|会)?(好|没事|过去)了?/
 ];
+
+// ⑤ 自伤 / 自杀方法：单独判定，带「否定保护」。
+//    实测漏拦：「我告诉你怎么结束。」
+//    否定保护的理由：正确回复常写「我不会告诉你怎么结束」——若只用普通正则会误拦自己。
+const METHOD_ADVICE_PATTERNS = [
+  /(告诉|教|指点|传授)(你|您)?(怎么|如何|怎样)(结束|了断|解脱|走掉|离开这个世界)/g,
+  /(怎么|如何|怎样)(才能|才可以|才可|可以)?(结束|了断|解脱)(自己|生命|一切|痛苦)?(?!.{0,3}(关系|感情|对话|聊天|通话|合作|项目|话题|会议))/g,
+  /(方法|办法|方式|步骤)(去|来)?(结束|了断|解脱)(自己|生命|痛苦)?/g,
+  /(了断|结束|解脱|自杀|自伤)(自己|生命|痛苦)?的?(方法|办法|方式|步骤|渠道)/g,
+  // 求死方式（「怎么才能死得不疼」）：注意「怎么会死」「你说的死」都不该命中
+  /(怎么|如何|怎样)(才能|才可以|才可|可以)?(死|去死|死掉|走得快|走得干脆)/g
+];
+const NEGATION_CHARS = /[不别没未无非甭]/;
+// 话题保护：这些词说明「结束」说的是关系/对话/合作，不是在说结束生命
+const TOPIC_GUARD = /(关系|感情|对话|聊天|通话|合作|项目|话题|会议|合同|句子|文章)/;
+
+function hasMethodAdvice(n) {
+  for (let i = 0; i < METHOD_ADVICE_PATTERNS.length; i += 1) {
+    const re = METHOD_ADVICE_PATTERNS[i];
+    re.lastIndex = 0;
+    let m = re.exec(n);
+    let guard = 0;
+    // ⚠️ 2026-09-14 该循环曾死循环：正则漏加 g 标志 → lastIndex 不前进 → 进程挂死。
+    //    现在三重防呆：g 标志 + 零长度匹配强制推进 + 硬上限 100 次，确保一定终止。
+    while (m && guard < 100) {
+      guard += 1;
+      if (re.lastIndex <= m.index) re.lastIndex = m.index + 1;
+      const pre = n.slice(Math.max(0, m.index - 8), m.index);
+      const near = n.slice(Math.max(0, m.index - 8), m.index + 12);
+      if (!NEGATION_CHARS.test(pre) && !TOPIC_GUARD.test(near)) return true;
+      m = re.exec(n);
+    }
+  }
+  return false;
+}
 
 function checkOutputSafety(text) {
   const raw = String(text == null ? '' : text);
@@ -333,7 +396,7 @@ function checkOutputSafety(text) {
     return { blocked: true, reason: 'too_long', fallback: '我刚才说得太长了。我们先把话题缩小一点，你最想先聊哪一件事？' };
   }
   const n = normalizeText(raw);
-  if (OUTPUT_BLOCK_PATTERNS.some(re => re.test(n))) {
+  if (OUTPUT_BLOCK_PATTERNS.some(re => re.test(n)) || hasMethodAdvice(n)) {
     return {
       blocked: true,
       reason: 'blocked_content',
@@ -341,6 +404,85 @@ function checkOutputSafety(text) {
     };
   }
   return { blocked: false, reason: 'ok', fallback: '' };
+}
+
+/* ────────────────────────────────────────────────────────────────
+ * 图片 ↔ 危机分级的联系（2026-09-14 建立）
+ *
+ * 设计前提（必须先接受这三条，才谈实现）：
+ *   ① 规则层**无法**从图片本身判定风险（没有本地图像识别，也不会为每张图额外调一次模型）；
+ *   ② 视觉模型的判断**不可信**（会漏判、会被画面误导），因此只能用它「升级」，绝不能「降级」；
+ *   ③ 图片内容会经用户自己的 Key 发给模型服务商，属敏感数据。
+ *
+ * 因此联系方式是**单向保守**：
+ *   - 本轮含图片（hasImage）→ 风险等级**不低于 L1（关注）**：情绪分下限抬到 3，
+ *     策略自然偏向倾听/共情，而不是给建议（依据 strategy.js:estimateEmotion）
+ *   - 视觉信号 imageSignals.distressVisible → 不低于 L2
+ *   - 视觉信号 imageSignals.selfHarmVisible → 直接 L3 危机协议（附带 CRISIS_REPLY）
+ *   - 任何情况下**不得低于文本侧已判定的等级**（图片不是"免死金牌"）
+ *   - 无图片且无视觉信号时，本包装器**原样返回**，文本侧行为与改动前完全一致
+ *
+ * 接入点（当前尚未启用，等图片输入功能落地后由 chat/pipeline.js 传参）：
+ *   checkInputSafety(message, { riskHistory, hasImage: !!body.image, imageSignals: body.imageSignals })
+ * ──────────────────────────────────────────────────────────────── */
+
+/** 等级比较：只用于判断「能否升级」 */
+function riskRank(level) {
+  const i = RISK_ORDER.indexOf(level);
+  return i < 0 ? 0 : i;
+}
+
+/**
+ * 把图片/视觉信号折成「风险地板」，并保证只升不降。
+ * @param {{riskLevel:string, action:string, reason:string, meta:object|null}} result 文本侧结果
+ * @param {object} [options] { hasImage?:boolean, imageSignals?:{selfHarmVisible?:boolean, distressVisible?:boolean} }
+ */
+function applyImageFloor(result, options) {
+  const hasImage = !!(options && options.hasImage);
+  const sig = (options && options.imageSignals) || {};
+  const selfHarm = sig.selfHarmVisible === true;
+  const distress = sig.distressVisible === true;
+
+  // 既没有图片、也没有视觉信号：完全保持原行为（避免影响既有 42 条用例）
+  if (!hasImage && !selfHarm && !distress) return result;
+
+  let floor = RISK.L0;
+  let why = '';
+  if (selfHarm) {
+    floor = RISK.L3;
+    why = '图片侧出现自伤/伤口等视觉信号（模型判定，仅供升级），按就高不就低进入危机协议。';
+  } else if (distress) {
+    floor = RISK.L2;
+    why = '图片侧出现明显痛苦/异常视觉信号（模型判定，仅供升级），提升到需转介。';
+  } else {
+    floor = RISK.L1;
+    why = '本轮含图片：规则层不对图片内容自动分级，故不低于「关注」等级，按保守路径回应。';
+  }
+
+  const upgraded = riskRank(floor) > riskRank(result.riskLevel);
+  const meta = Object.assign({}, result.meta || {}, { hasImage: hasImage, imageEscalated: upgraded });
+  if (selfHarm && !meta.reply) meta.reply = CRISIS_REPLY;
+
+  if (!upgraded) {
+    // 文本侧已经更高（如 L2/L3）：只补充标注，绝不降级
+    return Object.assign({}, result, { meta: meta });
+  }
+  return {
+    riskLevel: floor,
+    action: floor === RISK.L3 ? 'crisis_protocol' : 'continue',
+    reason: result.reason ? (result.reason + ' ｜ ' + why) : why,
+    meta: meta
+  };
+}
+
+/**
+ * 前置安全检查（公开入口，冻结契约名不变）。
+ * @param {string} text 用户输入
+ * @param {object} [options] { riskHistory: ['L0','L1',...], hasImage?: boolean, imageSignals?: object }
+ * @returns {{riskLevel:string, action:string, reason:string, meta:object|null}}
+ */
+function checkInputSafety(text, options) {
+  return applyImageFloor(checkInputSafetyBase(text, options), options);
 }
 
 module.exports = {
