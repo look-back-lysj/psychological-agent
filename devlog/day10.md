@@ -64,7 +64,7 @@
 
 | 方向 | 结论 |
 | --- | --- |
-| 开口引导 | SAMHSA TIP 35：**complex reflection**（补出意味，用陈述句、不加「对吗？」）、**roll with resistance**（不连问第二个问题，先反映抗拒本身）、**四个陷阱**（expert / labeling / blaming / premature focus） |
+| 开口引导 | SAMHSA TIP 35：**complex reflection**（补出意味，用陈述句、不加「对吗？」）、**coming alongside（当时记作「滚过抵抗」，MI 第 3 版已弃用该表述）**（不连问第二个问题，先反映抗拒本身）、**四个陷阱**（expert / labeling / blaming / premature focus） |
 | 证据等级 | MI = 中等质量证据；OARS 与四陷阱 = **官方实践共识、无独立 RCT**；PFA = **证据薄弱**。**文档里不得写「已被科学证明」** |
 | 守岸人语料 | **库洛没有公开可直引的台词全文页**；句长 / 标点统计**无官方一手依据**，只能标为「设计假设」。二创的「永远等你」「只为你存在」**禁止使用** |
 | 多 agent | **无证据表明加子 agent 能提升「真人感」**。真人感来自连续性 + 节奏 + 人格一致，不是流水线层数。故**不新增 agent**，并收紧「校」只在安全相关时调用 |

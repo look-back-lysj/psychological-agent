@@ -644,7 +644,7 @@ PIPL 原文（取自政府网站）里有一条**对我们极其关键**：
 | B1 | 把 MI 四个陷阱写进提示词禁止项（特别是 blaming trap「你不说我也没法帮你」） | SAMHSA TIP 35 |
 | B2 | 开口引导阶梯补「判定信号」与「失败模式」 | TIP 35 + PFA |
 | B3 | 强化 complex reflection：用陈述句 + 软化词，禁「对吗？」 | TIP 35 EXHIBIT 3.6 |
-| B4 | 补「不连问第二个问题」的显式约束 | roll with resistance |
+| B4 | 补「不连问第二个问题」的显式约束 | coming alongside（MI 第 3 版术语，取代已弃用的「滚过抵抗」） |
 | B5 | 增加 12 条开口引导回归用例（沉默 / 拒绝 / 羞耻 / 越狱） | 自建 |
 | B6 | 收紧「校」agent：只在安全相关时调用 | 无证据支持美学评审 |
 | B7 | 「回来」问候语在**有记忆时**必须引用具体记忆（当前已实现，需加测试） | 连续性 |
@@ -811,7 +811,7 @@ PIPL 原文（取自政府网站）里有一条**对我们极其关键**：
 | 强度 | 内容 |
 | --- | --- |
 | **同行评审实验 / 官方规范** | MI 系统综述（中等质量）、WCAG 2.2 条款、clreq、M3 token、真人轮转延迟、多 agent 各项数字 |
-| **官方实践共识（无独立 RCT）** | OARS、complex reflection、MI 四个陷阱、roll with resistance |
+| **官方实践共识（无独立 RCT）** | OARS、complex reflection、MI 四个陷阱、coming alongside（MI 第 3 版术语，取代已弃用的「滚过抵抗」） |
 | **证据薄弱** | PFA「不强求讲述」——综述结论为证据有限，且有 RCT 提示群体 PFA 可能无效甚至有害 |
 | **设计共识（非受控实验）** | nn/g 的动画时长区间、M3 数值、Apple 的减弱动效替代建议 |
 | **本机实测** | JSON 读写耗时、`node:sqlite` 基准、`buffer.constants.MAX_STRING_LENGTH` |
