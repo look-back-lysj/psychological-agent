@@ -60,7 +60,9 @@ const FAKE_SESSION_PREFIX = 's_';
 //   system prompt 换 buildPromptV4，输出后检换 checkOutput
 // LLM 调用 3 次 → 1 次。默认关闭，旧路径一个字节都没变。
 function v4Enabled() {
-  return String(process.env.XINYU_V4 || '').toLowerCase() === 'on';
+  // v4.0 默认开启（2026-10-11）：旧架构（213 条约束 + 多智能体 3 次调用）已被证实导致
+  // 「人机感」问题。设 XINYU_V4=off 可退回旧链路用于 A/B 对照。
+  return String(process.env.XINYU_V4 || 'on').toLowerCase() !== 'off';
 }
 
 const ERROR_FALLBACK = '我这边刚才没有接上，但你的话我已经听到了。可以点「重试」再来一次；如果想继续，也可以先慢慢说说现在最想聊的那件事。';
