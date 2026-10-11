@@ -46,7 +46,7 @@ const { checkOutputSafety } = require('../safety');
 
 // v3.2：①「校」明确为「仅本地命中才调用、且只做重写」；②补两条 L0 低信息量跳过「观」的条件
 //       （去标点后为空 / 同一字符重复 ≤12 字）；③新增 isSafetyIssue() 供调用点标注安全类命中。
-const AGENT_VERSION = 'v3.4';
+const AGENT_VERSION = 'v4.1';
 
 /**
  * 是否启用多智能体流水线。
