@@ -263,21 +263,24 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
   // 兜底：档位相关逻辑任何一步失败都不能让用户收不到回复
   if (!plan) plan = Object.assign(fallbackPlan({}, 'tier_plan_error_fallback'), { askQuestion: null });
 
-  // 策略裁决：规则层独占 S0/S6，模型只在 S1—S5 之间微调
-  const resolved = resolveStrategy(decision.key, plan);
+  // v4.0：策略已由 strategy.js chooseStrategy 定好，跳过 resolveStrategy 裁决
+  const useV4 = v4Enabled();
+  const resolved = useV4 ? { key: decision.key, from: decision.key, changed: false } : resolveStrategy(decision.key, plan);
   const strategyKey = resolved.key;
 
-  // 内在状态更新 → 转成表达约束
-  updateInnerState(innerState, {
-    userEmotion: plan.emotion,
-    intensity: plan.intensity,
-    userText: message,
-    riskLevel
-  });
-  const shape = replyShape(innerState);
+  // v4.0：跳过 updateInnerState + replyShape（产出的 shape 没被 buildPromptV4 使用）
+  let shape = null;
+  if (!useV4) {
+    updateInnerState(innerState, {
+      userEmotion: plan.emotion,
+      intensity: plan.intensity,
+      userText: message,
+      riskLevel
+    });
+    shape = replyShape(innerState);
+  }
 
   // v4.0：单段式提示词（≈900 token），替代旧版 13 段 / 213 条约束（≈2,500 token）
-  const useV4 = v4Enabled();
   const systemPrompt = useV4
     ? buildPromptV4({
       strategy: strategyKey,
@@ -317,8 +320,8 @@ async function generateReply(ctx, { stream, onDelta, signal }) {
     usage = r.usage;
   }
 
-  // 低风险仅安全问题触发重写；高风险保持原本的本地快检条件。
-  const issues = localScreen(content, plan, shape, { riskLevel });
+  // v4.0：跳过 localScreen（OutputGuard 已替代）
+  const issues = useV4 ? [] : localScreen(content, plan, shape, { riskLevel });
   const lowRisk = riskLevel === 'L0' || riskLevel === 'L1';
   const draftSafety = lowRisk && (issues.some(isSafetyIssue) || isSafetyDraft(content));
   let critic = { triggered: false, issues, revised: false, safety: !!draftSafety };

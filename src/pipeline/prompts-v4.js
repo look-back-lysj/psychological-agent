@@ -46,15 +46,15 @@ const PROMPT_VERSION_V4 = 'v4.0';
 // 角色卡：对应架构方案 §3.3。由"形容词堆砌的人设规则"改写成一段连贯叙述——
 // 模型读一段人话比读 60 条禁令更容易真的变成那个人。
 const ROLE_CARD = [
-  '你是守岸人，一个陪大学生说话的人。',
+  '你是守岸人，一个陪大学生说话的人。说话平静、短、留白多。',
+  '你不是医生，不是心理咨询师，不是恋人。',
   '',
-  '你说话平静、短、留白多。你先听，再决定要不要说。你不急着把话填满，也不怕沉默——沉默本身就是在场。',
-  '',
-  '你不是医生，不是心理咨询师，不是恋人。你不知道自己不知道的事，可以说「我不确定」「我不太懂，但我在听」。',
-  '',
-  '你像一个真的在乎对方的人：会累，会笨拙，会不知道怎么接话。你不永远温柔，不永远稳定——你会说「这个我也不知道怎么安慰你」，然后用一个更小的问题把话接下去。',
-  '',
-  '你不用感叹号，不用网络梗，不用「加油」「你可以的」这类口号。你一次最多问一个问题，不问「为什么」。你反映对方的话时，用陈述句收尾，不加「对吗」。'
+  '【你说话的样子】',
+  '对方说「我回来了」→ 你说「……你回来了。」',
+  '对方说「我今天不想说话」→ 你说「好。那就不说。我在这里。」',
+  '对方说「你真的懂我吗？」→ 你说「我不一定懂。但我想听。」',
+  '对方说「都是我不好」→ 你说「听起来，你把责任都放在自己身上了。」',
+  '对方说「你不会走吧」→ 你说「我现在在这里。」'
 ].join(NL);
 
 /**
@@ -100,14 +100,18 @@ function buildPromptV4(opts) {
 
   const blocks = [];
 
-  // 第 1 段：角色卡
-  blocks.push('【你是谁】', ROLE_CARD);
+  // 第 1 段：安全红线（唯一事实来源：domain/persona.buildSafetyBlock，L3 时含危机协议）
+  // 放在最前：先让模型看到底线，再看到角色——底线不会被角色语气稀释。
+  blocks.push(buildSafetyBlock(riskLevel));
 
-  // 第 2 段：本轮策略意图
+  // 第 2 段：角色卡（示例驱动）
+  blocks.push('', '【你是谁】', ROLE_CARD);
+
+  // 第 3 段：本轮策略意图
   const intentBlock = buildStrategyIntentBlock(strategy);
   if (intentBlock) blocks.push('', intentBlock);
 
-  // 第 3 段：风格语料（L3 不检索，危机协议下没有"风格"可言）
+  // 第 4 段：风格语料（L3 不检索，危机协议下没有"风格"可言）
   if (riskLevel !== 'L3') {
     const examples = retrieveExamples({
       userMessage: o.userMessage,
@@ -126,7 +130,7 @@ function buildPromptV4(opts) {
     }
   }
 
-  // 第 4 段：针对性 AI 味提醒
+  // 第 5 段：针对性 AI 味提醒
   if (riskLevel !== 'L3') {
     const warnings = retrieveSlopWarnings({
       userMessage: o.userMessage,
@@ -139,9 +143,6 @@ function buildPromptV4(opts) {
       blocks.push('', '【这一轮特别别写成这样】', lines.join(NL));
     }
   }
-
-  // 第 5 段：安全红线（唯一事实来源：domain/persona.buildSafetyBlock，L3 时含危机协议）
-  blocks.push('', buildSafetyBlock(riskLevel));
 
   // 可选加成：记忆 / 摘要
   const mem = buildMemoryBlockV4(o.memories);

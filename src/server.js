@@ -130,14 +130,14 @@ app.get('/api/health', (req, res) => {
   let cfg = { model: '', configured: false };
   try { cfg = require('./infra/config').getPublicConfig(); } catch (e) { /* 忽略 */ }
   const persona = require('./domain/persona');
-  const prompts = require('./pipeline/prompts');
+  const promptsV4 = require('./pipeline/prompts-v4');
   res.json({
     ok: true,
     time: new Date().toISOString(),
     model: cfg.model || '未配置',
     configured: !!cfg.configured,
     personaVersion: persona.PERSONA_VERSION,
-    promptVersion: prompts.PROMPT_VERSION
+    promptVersion: promptsV4.PROMPT_VERSION_V4
   });
 });
 

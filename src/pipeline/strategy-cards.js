@@ -47,7 +47,7 @@ const STRATEGY_CARDS = {
   S1_listen: {
     label: '陪伴性倾听',
     intent:
-      '这一轮先让她感到你在场。用简单反映把她的话折回去，不加新内容。' +
+      '这一轮先让她感到你在场。把她的话折回去，不加新内容。' +
       '如果对方退缩，把退缩本身当作内容来反映——「算了」这两个字，听着挺累的。' +
       '说完停住，不要接着问。',
     psychTechnique: 'simple reflection + coming alongside',
@@ -59,7 +59,7 @@ const STRATEGY_CARDS = {
   S2_empathy: {
     label: '共情反映',
     intent:
-      '这一轮先让她感到被听见。用复杂反映：在她字面意思之上，补一层你猜到的情绪或意义——' +
+      '这一轮先让她感到被听见。在她字面意思之上，补一层你猜到的情绪或意义——' +
       '记住这是猜，用「听起来／好像／也许」开头，把话停在可以被否定的位置。说完停住，不要接着问。',
     psychTechnique: 'complex reflection（情感层 / 意义层）',
     psychSource: 'MI-G Glossary (Miller & Rollnick 2013)；示例见 SAMHSA TIP 35 EXHIBIT 3.6',
@@ -92,7 +92,7 @@ const STRATEGY_CARDS = {
   S5_action: {
     label: '协作式小行动',
     intent:
-      '这一轮往行动推一小步，但决定权在她。用双侧反映：先接住她想维持的那一半（不想折腾 / 想缓一缓），' +
+      '这一轮往行动推一小步，但决定权在她。先接住她想维持的那一半（不想折腾 / 想缓一缓），' +
       '再轻轻点出变化的那一半（但这样下去会有多难受），两半都在同一句话里。说完停住，别替她选，也别连着甩方法。',
     psychTechnique: 'double-sided reflection（先 sustain talk 后 change talk）',
     psychSource: 'MI-G Glossary (Miller & Rollnick 2013) —— double-sided reflection；示例见 SAMHSA TIP 35 EXHIBIT 3.6',
@@ -103,7 +103,7 @@ const STRATEGY_CARDS = {
   S6_referral: {
     label: '资源转介',
     intent:
-      '这一轮要给她一条现实里能找到人的路。先用聚合式总结把刚才说过的话收拢——不排优先级、不加评价，' +
+      '这一轮要给她一条现实里能找到人的路。先把刚才说过的话收拢——不排优先级、不加评价，' +
       '就"所以卡住的是那件事"——再说一句你需要和现实里的人一起处理这件事，然后给两个具体方向：' +
       '身边能说话的人，或者学校心理中心。不编电话号码，不假装已经联系过谁，也不因为转介就冷下来。',
     psychTechnique: 'collecting summary + autonomy-supportive referral',
@@ -128,10 +128,12 @@ function getStrategyCard(key) {
 function buildStrategyIntentBlock(strategyKey) {
   const card = STRATEGY_CARDS[strategyKey];
   if (!card) return '';
+  // 学术标注（psychTechnique / psychSource）保留在数据里供代码注释与
+  // docs/psychology-basis.md 引用，但不进 prompt——给评审看的内容混进给模型的
+  // prompt 会让模型分心（2026-10-11 用户确认）。
   return [
     '【这一轮怎么陪她】' + card.label,
-    card.intent,
-    '（这一轮用的方法：' + card.psychTechnique + '；出处：' + card.psychSource + '）'
+    card.intent
   ].join(NL);
 }
 

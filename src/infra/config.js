@@ -25,7 +25,7 @@ const DEFAULTS = {
   model: 'deepseek-flash',
   apiKey: '',
   thinking: 'disabled',
-  temperature: 0.8,
+  temperature: 0.7,
   maxTokens: 512,
   timeoutMs: 30000
 };

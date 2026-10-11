@@ -3395,14 +3395,14 @@
   function updateTemperatureLabel() {
     if (!el.settingTemperatureValue || !el.settingTemperature) return;
     const value = Number(el.settingTemperature.value);
-    el.settingTemperatureValue.textContent = Number.isFinite(value) ? value.toFixed(1) : '0.8';
+    el.settingTemperatureValue.textContent = Number.isFinite(value) ? value.toFixed(1) : '0.7';
   }
 
   function applyConfigToForm(cfg) {
     const conf = cfg || {};
     fillModelSelect(el.settingModel, conf.model || MODEL_OPTIONS[0].value);
     if (el.settingTemperature) {
-      const temp = typeof conf.temperature === 'number' ? conf.temperature : 0.8;
+      const temp = typeof conf.temperature === 'number' ? conf.temperature : 0.7;
       el.settingTemperature.value = String(temp);
     }
     updateTemperatureLabel();
@@ -3427,7 +3427,7 @@
   function collectSettingsPatch() {
     const patch = {
       model: (el.settingModel && el.settingModel.value) || MODEL_OPTIONS[0].value,
-      temperature: el.settingTemperature ? Number(el.settingTemperature.value) : 0.8,
+      temperature: el.settingTemperature ? Number(el.settingTemperature.value) : 0.7,
       maxTokens: el.settingMaxTokens ? Number(el.settingMaxTokens.value) : 512,
       thinking: el.settingThinking && el.settingThinking.checked ? 'enabled' : 'disabled',
     };
