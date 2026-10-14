@@ -4609,3 +4609,151 @@ html.is-tauri-native .wizard__card {
     transform: none;
   }
 }
+
+/* =======================================================================
+   19. 窄屏溢出修复 + 视觉精修（2026-10-14）
+   -----------------------------------------------------------------------
+   背景：真机 390px 视口下文档被撑到 ~504px 宽，右侧内容（顶栏胶囊、
+   免责声明、建议胶囊）被截断出屏。诊断结论与对策：
+   1) dialog.modal 的尺寸/材质规则未限定 [open]，三个未打开的弹窗
+      （快捷键 / 二次确认 / 关于）参与文档布局，是超宽的根因；
+   2) 欢迎区原规则只有上下 padding，窄屏内容左右贴边；
+   3) 顶栏与快捷键提示行在极窄屏没有压缩策略。
+   本分区只做「追加覆盖」，不改动上方既有规则；整体删除本分区即可回滚。
+   ========================================================================= */
+
+/* ── 19.1 横向溢出：根因修复 + 双保险 ─────────────────────────────── */
+
+/* 真正的根因：#message textarea 带 HTML 默认 cols=20 的固有宽度（约 372px），
+   作为 flex 子项受 min-width:auto 保护而拒绝收缩，把 composer 表单撑到
+   468px、整个文档撑到 492px——窄屏（≤492px）必横向溢出，桌面看不出。
+   min-width:0 允许它正常收缩，width:100% 让它回到弹性填充。 */
+#message {
+  min-width: 0;
+  width: 100%;
+}
+
+/* 未打开的弹窗一律不参与布局（与 UA 行为对齐，防上游宽高规则连带影响） */
+dialog.modal:not([open]) {
+  display: none;
+}
+
+/* 双保险：文档级禁止横向滚动。用 clip 而不是 hidden——
+   clip 不创建滚动容器，不会把 overflow-y 连带改成 auto，也不影响 sticky。 */
+html,
+body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+/* ── 19.2 窄屏（≤860px）：安全边距与压缩策略 ─────────────────────── */
+
+@media (max-width: 860px) {
+  /* 欢迎区补上左右安全边距（原规则只有上下 padding，窄屏内容贴边） */
+  .welcome {
+    padding-left: var(--sp-4);
+    padding-right: var(--sp-4);
+  }
+
+  .welcome__inner {
+    width: 100%;
+  }
+
+  /* 顶栏收紧水平内边距，给右侧操作区让位 */
+  .topbar {
+    padding-left: var(--sp-3);
+    padding-right: var(--sp-3);
+  }
+
+  /* 快捷键提示行：窄屏降一号字，允许更松的换行 */
+  .composer__hint {
+    font-size: 11px;
+    line-height: 1.7;
+  }
+
+  .composer__hint kbd {
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 560px) {
+  /* 极窄屏收起副标题（信息在「关于」里可找回），保住右侧操作区完整 */
+  .topbar__title p {
+    display: none;
+  }
+
+  /* 状态胶囊限宽：超长文案省略号，不再把顶栏顶出屏幕 */
+  .pill {
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
+/* ── 19.3 视觉精修：在既有令牌体系内提质感，不换骨架 ──────────────── */
+
+/* 英雄区标题：字号上限提升一档，移动端由 clamp 自动回落 */
+.hero__title {
+  font-size: clamp(28px, 5.2vw, 36px);
+  letter-spacing: 0.015em;
+}
+
+/* 副标题从 faint 提到 muted：装饰可以淡，正文信息保持可读 */
+.hero__sub {
+  color: var(--text-muted);
+}
+
+/* 徽标呼吸光晕：一圈极缓的品牌色辉光，让首屏「活着」但不抢戏。
+   只用 transform/opacity（遵守 18 区动效约定）。 */
+.hero__mark::after {
+  content: "";
+  position: absolute;
+  inset: -14px;
+  border-radius: inherit;
+  background: radial-gradient(closest-side, var(--glow-brand), transparent 72%);
+  opacity: 0.4;
+  animation: hero-breath 5.2s var(--ease) infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes hero-breath {
+  from { opacity: 0.26; transform: scale(0.96); }
+  to   { opacity: 0.58; transform: scale(1.06); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero__mark::after {
+    animation: none;
+    opacity: 0.3;
+  }
+}
+
+/* 建议胶囊：常态即带极淡渐变描边，与 hover 的渐变边形成同语言呼应 */
+.suggestion {
+  border-color: transparent;
+  background-image: linear-gradient(var(--surface), var(--surface)),
+    linear-gradient(120deg, var(--brand-line), rgba(79, 209, 197, 0.28));
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+}
+
+/* 免责声明：边框弱化为「左侧 3px 强调线」，去掉满框描边的报警器观感 */
+.welcome__notice {
+  border: 1px solid var(--warn-border);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--r);
+}
+
+/* 用户气泡：实底换成品牌渐变，发送侧更有层次（文字对比度不变） */
+.msg--user .msg__bubble {
+  background: var(--grad-fill);
+}
+
+/* 侧边栏空状态：从虚线「警告框」降为安静的底色卡片 */
+.sessions__empty {
+  border: 1px dashed var(--border);
+  background: var(--surface-2);
+  color: var(--text-faint);
+  padding: var(--sp-5) var(--sp-3);
+  border-radius: var(--r-md);
+}
