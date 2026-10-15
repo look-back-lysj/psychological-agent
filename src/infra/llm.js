@@ -10,7 +10,7 @@
  *   1) 不要硬编码模型名（模型统一由 .env / config 提供）
  *   2) 不要去掉超时看门狗与 AbortSignal 支持
  */
-const { getConfig } = require('./config');
+const { getConfig, getDiscoveryConfig } = require('./config');
 
 // 流式调用的看门狗：首个数据块 / 两次数据块之间的最长等待，以及单次调用总上限
 const STREAM_IDLE_TIMEOUT_MS = 15000;
@@ -407,4 +407,39 @@ function backoffDelay(attempt) {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-module.exports = { callLLM, callLLMStream, testConnection, getConfig };
+
+/** OpenAI 兼容模型目录。仅发 GET；不保存草稿、不试聊、不转发上游错误正文。 */
+async function listModels(patch = {}) {
+  const cfg = getDiscoveryConfig(patch);
+  if (!cfg.apiKey) return { ok: false, code: 'no_key', message: '请为这个 API 地址填写 Key 后再获取模型。' };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10000);
+  try {
+    const candidates = [cfg.baseUrl];
+    if (new URL(cfg.baseUrl).pathname === '/') candidates.push(cfg.baseUrl + '/v1');
+    for (const baseUrl of candidates) {
+      const res = await fetch(baseUrl + '/models', {
+        headers: { Authorization: 'Bearer ' + cfg.apiKey },
+        signal: controller.signal,
+        redirect: 'error'
+      });
+      if (res.status === 401 || res.status === 403) {
+        return { ok: false, code: 'model_auth', message: 'Key 无效或没有模型列表权限，请检查 Key，也可手动填写模型名。' };
+      }
+      if (res.status === 404 || res.status === 405) { await res.body?.cancel(); continue; }
+      if (!res.ok) return { ok: false, code: 'model_list_failed', message: '模型列表获取失败（HTTP ' + res.status + '），可稍后重试或手动填写模型名。' };
+      const data = await res.json();
+      const entries = Array.isArray(data.data) ? data.data : (Array.isArray(data.models) ? data.models : []);
+      const ids = [...new Set(entries.map(m => typeof m === 'string' ? m : m && m.id)
+        .filter(id => typeof id === 'string' && id.trim() && id.length <= 100 && !/[\x00-\x1f]/.test(id)))].sort();
+      if (!ids.length) return { ok: false, code: 'model_list_empty', message: '服务没有返回可用的模型列表，请手动填写服务商提供的模型名。' };
+      return { ok: true, baseUrl, models: ids.slice(0, 2000).map(id => ({ id })) };
+    }
+    return { ok: false, code: 'model_list_unsupported', message: '此服务不提供兼容的模型列表接口，请手动填写模型名。' };
+  } catch (e) {
+    return { ok: false, code: controller.signal.aborted ? 'model_timeout' : 'model_list_network',
+      message: controller.signal.aborted ? '获取模型超时，请重试或手动填写。' : '无法读取模型列表，请检查 API 地址及网络，或手动填写模型名。' };
+  } finally { clearTimeout(timer); }
+}
+
+module.exports = { callLLM, callLLMStream, testConnection, getConfig, listModels };

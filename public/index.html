@@ -219,7 +219,7 @@
               <li>我不是心理咨询师，<strong>不能替代专业帮助</strong>，也不做任何诊断。</li>
               <li>如果你正处于危机中，请优先联系身边可信任的人、学校心理中心或当地紧急服务。</li>
               <li>长期记忆只保存在这台电脑本地，不会上传到任何服务器。</li>
-              <li>但每一次对话，都还是会用你自己填写的 DeepSeek API Key 发给 DeepSeek，才能生成回复——请不要说任何不想让第三方看到的内容。</li>
+              <li>但每一次对话，都会发给你设置的模型服务商，才能生成回复——请不要说任何不想让第三方看到的内容。</li>
               <li>你可以随时在「记忆」里逐条查看、删除，或一键清空。</li>
             </ul>
           </div>
@@ -281,7 +281,7 @@
         <section class="wizard__step" data-step="4">
           <h2 class="wizard__h">粘贴 Key，我们测试一次</h2>
           <div class="field">
-            <label class="field__label" for="wizard-key">DeepSeek API Key</label>
+            <label class="field__label" for="wizard-key">API Key（DeepSeek 或其它兼容服务）</label>
             <div class="field__row">
               <input class="input" id="wizard-key" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false" />
               <button class="btn btn--ghost" id="wizard-key-eye" type="button">显示</button>
@@ -292,15 +292,15 @@
             <summary>高级设置（一般不用改）</summary>
             <div class="field">
               <label class="field__label" for="wizard-model">模型</label>
-              <select class="input" id="wizard-model">
-                <option value="deepseek-flash">deepseek-flash（推荐，便宜快）</option>
-                <option value="deepseek-v4-pro">deepseek-v4-pro（更稳，稍贵）</option>
-              </select>
+              <input class="input" id="wizard-model" type="text" list="wizard-model-options" autocomplete="off" spellcheck="false" placeholder="获取列表后选择，或手动填写模型名" />
+              <datalist id="wizard-model-options"></datalist>
             </div>
             <div class="field">
               <label class="field__label" for="wizard-baseurl">API 地址</label>
               <input class="input" id="wizard-baseurl" type="text" autocomplete="off" spellcheck="false" />
               <p class="field__hint">默认 https://api.deepseek.com，使用其它兼容服务时才需要修改。</p>
+              <button class="btn btn--ghost" id="wizard-models" type="button">获取模型列表</button>
+              <p class="form-result" id="wizard-models-result" role="status" hidden></p>
             </div>
           </details>
           <p class="form-result" id="wizard-result" role="status" hidden></p>
@@ -331,12 +331,17 @@
     </header>
     <div class="drawer__body">
       <div class="field">
+        <label class="field__label" for="setting-baseurl">API 地址</label>
+        <input class="input" id="setting-baseurl" type="url" autocomplete="off" spellcheck="false" placeholder="例如 https://服务商地址/v1" />
+        <p class="field__hint">支持提供 OpenAI 兼容接口的服务。填写地址与 Key 后可自动获取模型。</p>
+      </div>
+      <div class="field">
         <label class="field__label" for="setting-model">模型</label>
-        <select class="input" id="setting-model">
-          <option value="deepseek-flash">deepseek-flash（推荐，便宜快）</option>
-          <option value="deepseek-v4-pro">deepseek-v4-pro（更稳，稍贵）</option>
-        </select>
-        <p class="field__hint">默认即可，一般不用改。</p>
+        <input class="input" id="setting-model" type="text" list="setting-model-options" autocomplete="off" spellcheck="false" placeholder="获取列表后选择，或手动填写模型名" />
+              <datalist id="setting-model-options"></datalist>
+        <button class="btn btn--ghost" id="settings-models" type="button">获取模型列表</button>
+        <p class="form-result" id="settings-models-result" role="status" hidden></p>
+        <p class="field__hint">从列表选择或手动填写模型名，点「保存设置」后用于聊天。列表中的模型不一定都支持聊天。</p>
       </div>
 
       <div class="field">

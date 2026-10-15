@@ -24,7 +24,7 @@ const express = require('express');
 const config = require('../infra/config');
 const memory = require('../infra/memory');
 const sessions = require('../infra/sessions');
-const { testConnection } = require('../infra/llm');
+const { testConnection, listModels } = require('../infra/llm');
 const { getComeback } = require('../infra/comeback');
 
 // ── 配置 ────────────────────────────────────────────────────────
@@ -40,6 +40,15 @@ configRouter.post('/', (req, res) => {
     res.json({ ok: true, data });
   } catch (e) {
     res.status(400).json({ ok: false, error: e.message || '配置保存失败' });
+  }
+});
+
+// 使用未保存的地址/Key 检测，成功后由用户选择模型再保存。
+configRouter.post('/models', async (req, res) => {
+  try {
+    res.json({ ok: true, data: await listModels(req.body || {}) });
+  } catch (e) {
+    res.status(400).json({ ok: false, error: e.code && e.code.startsWith('invalid_') ? e.message : '获取模型列表失败，请检查设置。' });
   }
 });
 

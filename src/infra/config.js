@@ -70,12 +70,15 @@ function parseApiKey(raw) {
 
 function parseBaseUrl(raw) {
   if (typeof raw !== 'string') return { ok: false, message: 'API 地址必须是字符串。' };
-  const value = raw.trim().replace(/\/+$/, ''); // 去掉结尾斜杠，避免拼出 //chat/completions
+  const value = raw.trim().replace(/\/+$/, '').replace(/\/(?:chat\/completions|models)$/, '');
   if (!value) return { ok: false, message: 'API 地址不能为空。' };
   let url = null;
   try { url = new URL(value); } catch (e) { return { ok: false, message: 'API 地址不是合法的网址。' }; }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     return { ok: false, message: 'API 地址必须以 http:// 或 https:// 开头。' };
+  }
+  if (url.username || url.password || url.search || url.hash) {
+    return { ok: false, message: 'API 地址不能包含用户名、密码、查询参数或片段，请只填写服务地址。' };
   }
   return { ok: true, value };
 }
@@ -231,6 +234,13 @@ function saveConfig(patch) {
     throw err;
   }
 
+  if (Object.prototype.hasOwnProperty.call(patch, 'baseUrl')) {
+    const preview = getDiscoveryConfig(patch);
+    const saved = getConfig();
+    if (saved.apiKey && !preview.apiKey && !Object.prototype.hasOwnProperty.call(patch, 'apiKey')) {
+      throw Object.assign(new Error('切换服务地址时请同时填写该服务的 Key，原服务的 Key 不会发送到新地址。'), { code: 'invalid_apiKey' });
+    }
+  }
   const stored = readStoredConfig();
   const next = {};
   for (const field of WRITABLE_FIELDS) {
@@ -256,4 +266,23 @@ function clearApiKey() {
   return saveConfig({ apiKey: '' });
 }
 
-module.exports = { getConfig, getPublicConfig, saveConfig, clearApiKey, maskKey };
+
+// 检测草稿不落盘；切换服务时不复用另一家服务的 Key。
+function getDiscoveryConfig(patch = {}) {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+    throw Object.assign(new Error('模型检测参数必须是对象。'), { code: 'invalid_patch' });
+  }
+  const saved = getConfig();
+  const cfg = { ...saved };
+  for (const field of ['baseUrl', 'apiKey']) {
+    if (!Object.prototype.hasOwnProperty.call(patch, field)) continue;
+    const parsed = PARSERS[field](patch[field]);
+    if (!parsed.ok) throw Object.assign(new Error(parsed.message), { code: 'invalid_' + field });
+    cfg[field] = parsed.value;
+  }
+  if (new URL(cfg.baseUrl).origin !== new URL(saved.baseUrl).origin &&
+      !Object.prototype.hasOwnProperty.call(patch, 'apiKey')) cfg.apiKey = '';
+  return cfg;
+}
+
+module.exports = { getConfig, getPublicConfig, saveConfig, clearApiKey, maskKey, getDiscoveryConfig };

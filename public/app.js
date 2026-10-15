@@ -338,6 +338,11 @@
     settingsDrawer: $('settings-drawer'),
     settingsClose: $('settings-close'),
     settingModel: $('setting-model'),
+    settingBaseUrl: $('setting-baseurl'),
+    settingsModels: $('settings-models'),
+    settingsModelsResult: $('settings-models-result'),
+    wizardModels: $('wizard-models'),
+    wizardModelsResult: $('wizard-models-result'),
     settingTemperature: $('setting-temperature'),
     settingTemperatureValue: $('setting-temperature-value'),
     settingMaxTokens: $('setting-maxtokens'),
@@ -2962,7 +2967,15 @@
       el.wizardKeyEye.addEventListener('click', function () { togglePassword(el.wizardKey, el.wizardKeyEye); });
     }
 
-    // 设置面板
+    // 地址与 Key 填写完毕后自动检测；也支持手动刷新。
+    if (el.settingsModels) el.settingsModels.addEventListener('click', function () { discoverModels('settings', false); });
+    if (el.wizardModels) el.wizardModels.addEventListener('click', function () { discoverModels('wizard', false); });
+    [el.settingBaseUrl, el.settingKeyInput].forEach(function (input) {
+      if (input) input.addEventListener('change', function () { discoverModels('settings', true); });
+    });
+    [el.wizardBaseUrl, el.wizardKey].forEach(function (input) {
+      if (input) input.addEventListener('change', function () { discoverModels('wizard', true); });
+    });
     if (el.settingTemperature) el.settingTemperature.addEventListener('input', updateTemperatureLabel);
     if (el.settingKeyChange) {
       el.settingKeyChange.addEventListener('click', function () {
@@ -3376,20 +3389,65 @@
    * 十九、设置面板（模型 / 温度 / max_tokens / Key / 测试连接 / 调试）
    * ============================================================ */
 
-  function fillModelSelect(select, current) {
+  function fillModelSelect(select, current, models) {
     if (!select) return;
-    select.textContent = '';
-    const options = MODEL_OPTIONS.slice();
-    if (current && !options.some((o) => o.value === current)) {
-      options.unshift({ value: current, label: current + '（当前使用）' });
-    }
-    options.forEach((o) => {
+    const target = select.tagName === 'INPUT' ? $(select.id + '-options') : select;
+    if (!target) return;
+    target.textContent = '';
+    const options = models ? models.map(m => ({ value: m.id, label: m.id })) : MODEL_OPTIONS.slice();
+    if (current && !options.some(o => o.value === current)) options.unshift({ value: current, label: current + '（当前填写）' });
+    options.forEach(o => {
       const opt = document.createElement('option');
       opt.value = o.value;
       opt.textContent = o.label;
-      select.appendChild(opt);
+      target.appendChild(opt);
     });
-    select.value = current || MODEL_OPTIONS[0].value;
+    select.value = current || (options[0] && options[0].value) || '';
+  }
+
+  const modelDiscoverySeq = { settings: 0, wizard: 0 };
+
+  function modelDiscoveryDraft(scope) {
+    const wizard = scope === 'wizard';
+    const base = wizard ? el.wizardBaseUrl : el.settingBaseUrl;
+    const key = wizard ? el.wizardKey : el.settingKeyInput;
+    const patch = { baseUrl: (base && base.value.trim()) || (configCache && configCache.baseUrl) || 'https://api.deepseek.com' };
+    if (key && key.value.trim()) patch.apiKey = key.value.trim();
+    return patch;
+  }
+
+  async function discoverModels(scope, silent) {
+    const wizard = scope === 'wizard';
+    const button = wizard ? el.wizardModels : el.settingsModels;
+    const resultNode = wizard ? el.wizardModelsResult : el.settingsModelsResult;
+    const model = wizard ? el.wizardModel : el.settingModel;
+    const base = wizard ? el.wizardBaseUrl : el.settingBaseUrl;
+    const draft = modelDiscoveryDraft(scope);
+    if (!draft.apiKey && !(configCache && configCache.configured)) {
+      if (!silent) setResult(resultNode, 'error', '请先填写 API 地址与 Key。');
+      return;
+    }
+    const seq = ++modelDiscoverySeq[scope];
+    const fingerprint = JSON.stringify(draft);
+    setBusy(button, true, '正在获取');
+    setResult(resultNode, 'loading', '正在获取此地址提供的模型列表…');
+    try {
+      const data = await apiRequest('/api/config/models', { method: 'POST', body: draft });
+      if (seq !== modelDiscoverySeq[scope] || fingerprint !== JSON.stringify(modelDiscoveryDraft(scope))) return;
+      if (!data.ok) { setResult(resultNode, 'error', data.message || '获取失败，可以手动填写模型名。'); return; }
+      const current = model && model.value.trim();
+      const listed = data.models.some(m => m.id === current);
+      const isOldDefault = !current || MODEL_OPTIONS.some(m => m.value === current) || (configCache && current === configCache.model);
+      const chosen = listed || !isOldDefault ? current : data.models[0].id;
+      fillModelSelect(model, chosen, data.models);
+      if (base) base.value = data.baseUrl;
+      setResult(resultNode, 'ok', '已获取 ' + data.models.length + ' 个模型，可选择或手动填写；保存后生效。');
+    } catch (e) {
+      if (seq === modelDiscoverySeq[scope] && fingerprint === JSON.stringify(modelDiscoveryDraft(scope)))
+        setResult(resultNode, 'error', e.userMessage || '获取失败，请检查地址与 Key，或手动填写模型名。');
+    } finally {
+      if (seq === modelDiscoverySeq[scope]) setBusy(button, false);
+    }
   }
 
   function updateTemperatureLabel() {
@@ -3401,6 +3459,7 @@
   function applyConfigToForm(cfg) {
     const conf = cfg || {};
     fillModelSelect(el.settingModel, conf.model || MODEL_OPTIONS[0].value);
+    if (el.settingBaseUrl) el.settingBaseUrl.value = conf.baseUrl || 'https://api.deepseek.com';
     if (el.settingTemperature) {
       const temp = typeof conf.temperature === 'number' ? conf.temperature : 0.7;
       el.settingTemperature.value = String(temp);
@@ -3418,6 +3477,7 @@
       const data = await apiRequest('/api/config');
       configCache = data || {};
       applyConfigToForm(configCache);
+      if (activeDrawer === 'settings' && configCache.configured) discoverModels('settings', true);
     } catch (e) {
       applyConfigToForm(configCache || {});
       if (!silent) toastError(e, '读取设置失败，先显示上一次的配置');
@@ -3426,7 +3486,8 @@
 
   function collectSettingsPatch() {
     const patch = {
-      model: (el.settingModel && el.settingModel.value) || MODEL_OPTIONS[0].value,
+      baseUrl: el.settingBaseUrl ? el.settingBaseUrl.value.trim() : ((configCache && configCache.baseUrl) || 'https://api.deepseek.com'),
+      model: (el.settingModel && el.settingModel.value.trim()) || MODEL_OPTIONS[0].value,
       temperature: el.settingTemperature ? Number(el.settingTemperature.value) : 0.7,
       maxTokens: el.settingMaxTokens ? Number(el.settingMaxTokens.value) : 512,
       thinking: el.settingThinking && el.settingThinking.checked ? 'enabled' : 'disabled',

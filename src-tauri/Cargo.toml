@@ -1,6 +1,6 @@
 [package]
 name = "xinyu"
-version = "2.0.0"
+version = "4.1.0"
 description = "心屿 · 大学生情绪陪伴智能体"
 authors = ["心屿"]
 edition = "2021"
